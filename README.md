@@ -73,3 +73,7 @@ Multi-language examples use:
 
 The tab bar and copy button are added automatically; the chosen language is
 remembered across the page and across visits.
+
+## License
+
+[MIT](LICENSE) © Temporis

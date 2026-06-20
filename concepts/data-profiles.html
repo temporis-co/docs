@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data profiles — Temporis Docs</title>
+  <meta name="description" content="A data profile is the recipe that tells Temporis how to read a data source: which series, at what cadence, how much history, and how to clean it.">
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Data profiles</span></nav>
+          <h1>Data profiles</h1>
+          <p class="docs-lead">A data profile is the recipe that tells Temporis how to read a data source: which series, at what cadence, how much history, and how to clean it. It is the thing you forecast against.</p>
+
+          <h2>What a profile defines</h2>
+          <p>A <a href="data-sources.html">data source</a> holds raw rows. A profile turns those rows into a clean, regularly spaced signal the model can read — picking the series, snapping observations onto a time grid, deciding how much history to use, and tidying gaps. When you call <a href="../api/predict.html">predict</a>, you name a profile, not a source.</p>
+
+          <p>You create and edit profiles in the dashboard. The example here is <code>hourly_orders</code>: it reads the <code>orders</code> series from <code>store_metrics</code> on a one-hour grid (<code>interval</code> 3600).</p>
+
+          <h2>Selecting the data</h2>
+          <h3>Source and series</h3>
+          <p>Two settings choose what the profile reads:</p>
+          <ul>
+            <li><code>data_source</code> — which data source to read from.</li>
+            <li><code>names</code> — one or more series names within that source.</li>
+          </ul>
+          <p>Listing a single name gives a univariate forecast. Listing several — say <code>orders</code> and <code>visitors</code> — makes the profile <strong>multivariate</strong>: the series are forecast jointly, so the model can use the relationship between them.</p>
+
+          <h2>The time grid</h2>
+          <p>Real observations rarely arrive on a perfectly even cadence, so a profile resamples them onto a regular grid.</p>
+
+          <p><code>interval</code> is the size of each grid bucket in seconds. With <code>interval</code> 3600, observations are snapped into hourly buckets. The grid is anchored on your <strong>most recent</strong> observation and steps backward from there, so the latest data always lands cleanly on the grid.</p>
+
+          <p>The model does not read every point one at a time. It works in <em>patches</em> — fixed-size chunks of the series:</p>
+          <ul>
+            <li><code>patch_len</code> — how many points make up one patch.</li>
+            <li><code>patch_spacing</code> — the stride between the points it uses, a form of downsampling.</li>
+            <li><code>num_patches</code> — the most patches of history it will use as context.</li>
+            <li><code>min_patches</code> — the fewest patches of history required to serve a prediction.</li>
+          </ul>
+
+          <p>Intuitively: the context the model sees is roughly <code>num_patches</code> patches of recent history. If a profile has fewer than <code>min_patches</code> patches available, it cannot serve and you get <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>Spacing also sets your forecast resolution. The effective step between forecast points is <code>interval × patch_spacing</code> seconds. With <code>interval</code> 3600 and <code>patch_spacing</code> 1, predictions land one hour apart.</p>
+
+          <h2>Cleaning the series</h2>
+          <p>After resampling, some buckets may have no observation. Two settings decide how that is handled:</p>
+          <ul>
+            <li><code>fill_limit</code> — the longest run of consecutive empty buckets that will be forward-filled (carrying the last known value forward). A gap longer than this is treated as genuinely missing and those rows are dropped instead.</li>
+            <li><code>exclude_window</code> — a recurring time-of-day window to mask out, given as a timezone plus a start and stop. Use it for dead time you expect, like overnight hours when a market is closed, so that quiet stretch does not distort the series.</li>
+          </ul>
+
+          <h2>Levels vs. growth</h2>
+          <p>Some series are best modeled by their <em>level</em>; others by their <em>relative change</em>. The <code>use_diffs</code> setting (the log-diff transform) switches the model to work on log growth — proportional change from one step to the next — instead of the raw value.</p>
+
+          <p>Turn it on for series that move multiplicatively or trend strongly over a wide range: revenue, prices, anything where a 10% move matters more than an absolute one. Leave it off for series that sit in a bounded, roughly stationary range, where the raw level is already the natural thing to predict.</p>
+
+          <h2>Readiness</h2>
+          <p>A profile is not usable the instant you create it. Temporis first computes normalization statistics — learning the typical spread of your data so it can scale values into the range the model expects. Until it has enough data to do that, the profile is not ready, and the dashboard shows its readiness state.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Predicting against a profile that is not ready returns <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> Wait until the dashboard reports the profile as ready, then call predict.</p></div>
+          </div>
+
+          <h2>Settings reference</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Setting</th><th>What it controls</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>Which data source the profile reads.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>Series to read; several names forecast jointly (multivariate).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>Resampling bucket in seconds; grid anchored on the most recent observation.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>Number of points in one patch — the chunk the model reads and writes at a time.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>Stride between points used; forecast step is <code>interval × patch_spacing</code> seconds.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>Maximum patches of history used as context.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>Minimum patches required to serve; below this, 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>Longest run of empty buckets to forward-fill; longer gaps drop rows.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>Model relative change (log growth) instead of raw level.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>Recurring time-of-day window to mask (timezone + start + stop).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Not sure what values to choose? <a href="../guides/tuning-profile.html">Tuning a profile</a> walks through picking <code>interval</code>, history length, and the cleaning settings for your data.</p></div>
+          </div>
+
+          <h2>Next steps</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Tuning a profile →</p><p class="doc-card-desc">How to choose good values for each setting.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions →</p><p class="doc-card-desc">What you get back when you forecast against a profile.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">The full reference for the predict endpoint.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">On this page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

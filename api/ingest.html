@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingest records — Temporis Docs</title>
+  <meta name="description" content="Send observations into a Temporis data source with the ingest endpoint, including request body, upsert behavior, and errors.">
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/ingest" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>API reference</span><span class="sep">/</span><span>Ingest records</span></nav>
+          <h1>Ingest records</h1>
+          <p class="docs-lead">Send observations into a data source. The data source must already exist (create it in the dashboard) and not be archived.</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/data_sources/ingest</span></div>
+
+          <h2>Request body</h2>
+          <p>The body names the target data source and carries a batch of records.</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_source</span><span class="param-type">string</span><span class="param-req">Required</span></div>
+              <p class="param-desc">The name of an existing, non-archived data source to write into.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">records</span><span class="param-type">array</span><span class="param-req">Required</span></div>
+              <p class="param-desc">A list of records to store. Each record is a single observation of one series at one time.</p>
+            </div>
+          </div>
+
+          <h3>Record fields</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">timestamp</span><span class="param-type">integer</span><span class="param-req">Required</span></div>
+              <p class="param-desc">Unix time in seconds.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">name</span><span class="param-type">string</span><span class="param-req">Required</span></div>
+              <p class="param-desc">The series name. One data source holds many named series.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">value</span><span class="param-type">number</span><span class="param-req">Required</span></div>
+              <p class="param-desc">The observed value (an integer or float).</p>
+            </div>
+          </div>
+
+          <h2>Example request</h2>
+          <p>This writes four <code>orders</code> observations into the <code>store_metrics</code> data source, reading the token from the environment:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718841600, "name": "orders", "value": 42 },
+      { "timestamp": 1718845200, "name": "orders", "value": 51 },
+      { "timestamp": 1718848800, "name": "orders", "value": 47 },
+      { "timestamp": 1718852400, "name": "orders", "value": 63 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718841600, "name": "orders", "value": 42},
+            {"timestamp": 1718845200, "name": "orders", "value": 51},
+            {"timestamp": 1718848800, "name": "orders", "value": 47},
+            {"timestamp": 1718852400, "name": "orders", "value": 63},
+        ],
+    },
+)
+resp.raise_for_status()  # 204 No Content on success</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718841600, name: "orders", value: 42 },
+      { timestamp: 1718845200, name: "orders", value: 51 },
+      { timestamp: 1718848800, name: "orders", value: 47 },
+      { timestamp: 1718852400, name: "orders", value: 63 },
+    ],
+  }),
+});</code></pre></div>
+          </div>
+
+          <h2>Response</h2>
+          <p>On success the endpoint returns <strong>204 No Content</strong> with an empty body:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>204 No Content</code></pre></div>
+
+          <h2>Upsert behavior</h2>
+          <p>Each record is keyed by the pair <code>(timestamp, name)</code>. Re-sending a record with the same timestamp and series name overwrites the stored value.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Retries and backfills are idempotent</div><p>Because the write is an upsert, you can safely retry a failed request or re-send historical data — duplicates collapse onto the same key instead of accumulating.</p></div>
+          </div>
+
+          <h2>Batching</h2>
+          <p>Prefer sending many records in a single request over one record per request. Batching cuts round trips and overhead dramatically. When loading history, send it in chunks of many records each rather than streaming one point at a time.</p>
+
+          <h2>Errors</h2>
+          <p>Errors return the HTTP status plus a JSON body of the form <code>{ "detail": "..." }</code>.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Status</th><th>detail message</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>401</td><td>Invalid access token. / Missing access token.</td><td>Authentication failed — check your token.</td></tr>
+              <tr><td>404</td><td>Data source not found.</td><td>The named data source does not exist. Create it in the dashboard first.</td></tr>
+              <tr><td>409</td><td>Data source is archived.</td><td>The data source is archived and cannot accept writes. Unarchive it or use another source.</td></tr>
+            </tbody>
+          </table></div>
+          <p>See <a href="../api/errors.html">Errors &amp; status codes</a> for the complete reference.</p>
+
+          <h2>Related</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Data sources →</p><p class="doc-card-desc">How Temporis stores your named series.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Create a prediction →</p><p class="doc-card-desc">Forecast from the data you ingested.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">Preparing data →</p><p class="doc-card-desc">Get your series ready to forecast well.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">On this page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

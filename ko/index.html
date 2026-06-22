@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporis 문서 — API로 제공하는 예측</title>
+  <meta name="description" content="Temporis는 시계열 예측 API입니다. 데이터를 보내고, 데이터 프로파일을 정의한 뒤, 단 한 번의 요청으로 확률적 예측을 생성하세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="index" data-base="">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <div class="docs-hero">
+            <span class="eyebrow">Temporis 문서</span>
+            <h1>예측, API로.</h1>
+            <p class="docs-lead">
+              Temporis는 여러분의 시계열을 확률적 예측으로 바꿔 줍니다. 숫자를
+              스트리밍으로 보내고, 그 데이터를 어떻게 읽어야 하는지 <strong>데이터 프로파일</strong>로
+              설명한 다음, 하나의 엔드포인트만 호출하면 다음에 무엇이 올지 예측이 생성됩니다 — 학습할
+              모델도, 운영할 인프라도 필요 없습니다.
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <a class="doc-card" href="quickstart.html">
+              <p class="doc-card-kicker">여기서 시작하세요</p>
+              <p class="doc-card-title">빠른 시작 →</p>
+              <p class="doc-card-desc">API 키 발급부터 첫 예측까지 약 5분이면 끝납니다.</p>
+            </a>
+            <a class="doc-card" href="concepts/how-it-works.html">
+              <p class="doc-card-kicker">이해하기</p>
+              <p class="doc-card-title">예측의 작동 방식 →</p>
+              <p class="doc-card-desc">Temporis의 핵심 아이디어: 시계열을 모델이 읽을 수 있는 하나의 언어처럼 다루기.</p>
+            </a>
+            <a class="doc-card" href="api/predict.html">
+              <p class="doc-card-kicker">레퍼런스</p>
+              <p class="doc-card-title">API 레퍼런스 →</p>
+              <p class="doc-card-desc">모든 엔드포인트의 정확한 요청 및 응답 형식.</p>
+            </a>
+          </div>
+
+          <h2>Temporis 워크플로의 형태</h2>
+          <p>
+            Temporis의 모든 것은 세 가지 명사를 중심으로 돌아갑니다. 이 개념들이 머릿속에서 자리 잡으면
+            전체 API가 자연스럽게 따라옵니다.
+          </p>
+
+          <div class="kv">
+            <div class="kv-row">
+              <div class="kv-key">데이터 소스</div>
+              <div class="kv-val">원시 관측값을 밀어 넣는 이름이 붙은 스트림으로, <code>(timestamp, name, value)</code> 행으로 이루어진 테이블과 비슷합니다. 하나의 데이터 소스는 여러 시계열을 담을 수 있습니다.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">데이터 프로파일</div>
+              <div class="kv-val">Temporis에게 데이터 소스를 <em>어떻게</em> 읽어야 하는지 알려 주는 저장된 레시피입니다: 어떤 시계열을, 어떤 간격으로, 얼마나 많은 이력으로, 그리고 어떻게 정제할지를 정의합니다. 예측은 바로 이 프로파일을 대상으로 수행됩니다.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">예측</div>
+              <div class="kv-val">데이터 프로파일을 지정해 <code>/v1/predict</code>를 한 번 호출하면 여러 개의 가능한 미래가 반환되며, 각각은 앞으로 이어지는 값들의 완전한 궤적입니다.</div>
+            </div>
+          </div>
+
+          <p>
+            데이터 소스와 데이터 프로파일은
+            <a href="https://platform.temporis.co">Temporis 대시보드</a>에서 관리하고, 대량 작업 —
+            데이터 전송과 예측 요청 — 은 여기에 문서화된 API를 통해 수행합니다.
+          </p>
+
+          <h2>맛보기</h2>
+          <p>관측값을 보내고 예측을 요청하는 모습은 다음과 같습니다:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code># 1. Send observations to a data source
+curl -X POST "https://api.temporis.co/v1/data_sources/ingest" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1716249600, "name": "orders", "value": 42 },
+      { "timestamp": 1716253200, "name": "orders", "value": 51 }
+    ]
+  }'
+
+# 2. Ask a data profile for the next steps
+curl -X POST "https://api.temporis.co/v1/predict" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+BASE = "https://api.temporis.co"
+headers = {"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"}
+
+# 1. Send observations to a data source
+requests.post(f"{BASE}/v1/data_sources/ingest", headers=headers, json={
+    "data_source": "store_metrics",
+    "records": [
+        {"timestamp": 1716249600, "name": "orders", "value": 42},
+        {"timestamp": 1716253200, "name": "orders", "value": 51},
+    ],
+}).raise_for_status()
+
+# 2. Ask a data profile for the next steps
+forecast = requests.post(f"{BASE}/v1/predict", headers=headers, json={
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9,
+}).json()
+
+print(forecast["predictions"][0]["data"])</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const BASE = "https://api.temporis.co";
+const headers = {
+  "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
+// 1. Send observations to a data source
+await fetch(`${BASE}/v1/data_sources/ingest`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1716249600, name: "orders", value: 42 },
+      { timestamp: 1716253200, name: "orders", value: 51 },
+    ],
+  }),
+});
+
+// 2. Ask a data profile for the next steps
+const res = await fetch(`${BASE}/v1/predict`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const forecast = await res.json();
+console.log(forecast.predictions[0].data);</code></pre></div>
+          </div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body">
+              <div class="callout-title">시계열 예측이 처음이신가요?</div>
+              <p><a href="concepts/how-it-works.html">예측의 작동 방식</a>부터 시작하세요. API를 만지기 전에 Temporis의 사고 모델을 설명해 주며, 그러고 나면 나머지 문서가 훨씬 쉽게 읽힐 것입니다.</p>
+            </div>
+          </div>
+
+          <h2>다음에 볼 곳</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="concepts/data-sources.html">
+              <p class="doc-card-title">데이터 소스</p>
+              <p class="doc-card-desc">Temporis가 관측값을 어떻게 저장하는지, 그리고 어떻게 잘 보낼 수 있는지.</p>
+            </a>
+            <a class="doc-card" href="concepts/data-profiles.html">
+              <p class="doc-card-title">데이터 프로파일</p>
+              <p class="doc-card-desc">데이터를 읽고 예측하는 방식을 결정하는 모든 설정.</p>
+            </a>
+            <a class="doc-card" href="concepts/predictions.html">
+              <p class="doc-card-title">예측 &amp; 샘플링</p>
+              <p class="doc-card-desc">예측을 읽는 법, 그리고 <code>count</code>, <code>temperature</code>, <code>top_p</code>가 하는 일.</p>
+            </a>
+            <a class="doc-card" href="guides/prediction-samples.html">
+              <p class="doc-card-title">샘플 다루기</p>
+              <p class="doc-card-desc">여러 샘플 궤적을 구간 및 점 예측으로 바꾸기.</p>
+            </a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data sources — Temporis Docs</title>
+  <meta name="description" content="data source वह जगह है जहाँ आपके raw observations रहते हैं। Temporis का data model और इसमें डेटा कैसे stream करें, यह जानें।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Data sources</span></nav>
+          <h1>Data sources</h1>
+          <p class="docs-lead">data source वह जगह है जहाँ आपके raw observations रहते हैं। यह पेज Temporis के data model को और इसमें डेटा अच्छी तरह कैसे भेजें, इसे कवर करता है।</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>आप dashboard में एक बार data source बनाते हैं, फिर जैसे-जैसे observations होते हैं, उन्हें API के ज़रिए इसमें stream करते रहते हैं।</p></div>
+          </div>
+
+          <h2>data model</h2>
+          <p>Temporis डेटा को rows के रूप में संग्रहित करता है। हर observation एक अकेला triple होता है: <em>कब</em> कुछ मापा गया, <em>क्या</em> मापा गया, और जो <em>संख्या</em> आपने मापी।</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">Unix time <strong>सेकंड्स</strong> में (एक integer)। वह क्षण जब observation लिया गया।</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">वह series जिससे यह value संबंधित है — उदाहरण के लिए <code>orders</code> या <code>revenue</code>।</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">एक संख्या। Floats भी ठीक हैं।</div></div>
+          </div>
+
+          <p>एक अकेला data source कई named series को एक साथ रख सकता है। <code>name</code> field ही उन्हें अलग रखता है। आपका डेटा हर दूसरे ग्राहक के डेटा से अलग रहता है — एक data source सिर्फ़ आपका होता है।</p>
+
+          <h2>data source बनाना</h2>
+          <p>आप dashboard में <strong>Data Sources</strong> के अंतर्गत data source बनाते हैं। इसे एक नाम दें और यह डेटा प्राप्त करने के लिए तैयार है।</p>
+
+          <p>नाम कुछ नियमों का पालन करते हैं:</p>
+          <ul>
+            <li>एक lowercase अक्षर से शुरू करें।</li>
+            <li>केवल lowercase अक्षर, अंक और underscores का उपयोग करें।</li>
+            <li>अधिकतम 48 अक्षर तक।</li>
+          </ul>
+
+          <p>इसलिए <code>store_metrics</code> और <code>grid_load_eu</code> मान्य हैं; <code>Store-Metrics</code> और <code>2024data</code> नहीं हैं। नया बनाया गया data source तब तक खाली रहता है जब तक आप इसे observations नहीं भेजते।</p>
+
+          <h2>observations भेजना</h2>
+          <p>आप ingest endpoint से डेटा जोड़ते हैं। हर call में target <code>data_source</code> और <code>records</code> की एक list होती है। यहाँ हम <code>store_metrics</code> में कुछ <code>orders</code> readings push कर रहे हैं।</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>एक सफल ingest <strong>HTTP 204 No Content</strong> लौटाता है जिसका body खाली होता है — पढ़ने के लिए कुछ नहीं होता, rows बस संग्रहित हो जाती हैं। पूरे request और error विवरण के लिए <a href="../api/ingest.html">ingest reference</a> देखें।</p>
+
+          <h2>एक source में कई series</h2>
+          <p>आप प्रति source एक series तक सीमित नहीं हैं। एक ही <code>data_source</code> में अलग-अलग <code>name</code> values भेजें और वे अलग series के रूप में साथ-साथ रहती हैं। एक store, <code>store_metrics</code> में orders, revenue और visitors सभी को track कर सकता है।</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>संबंधित series को एक साथ रखना सुविधाजनक है और बाद में आपको उन्हें संयुक्त रूप से forecast करने देता है। <a href="data-profiles.html">data profile</a> वह जगह है जहाँ आप चुनते हैं कि इन नामों में से किसे असल में पढ़ना है।</p>
+
+          <h2>Updates और backfills</h2>
+          <p>upsert key <code>(timestamp, name)</code> की जोड़ी है। ऐसा record भेजना जिसका timestamp और name पहले से मौजूद हैं, संग्रहित value को duplicate जोड़ने के बजाय <strong>overwrite</strong> कर देता है।</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Backfills और retries सुरक्षित हैं</div><p>चूँकि writes <code>(timestamp, name)</code> पर idempotent हैं, आप network में रुकावट के बाद एक batch दोबारा भेज सकते हैं, गलत reading सुधार सकते हैं, या महीनों का इतिहास किसी भी क्रम में load कर सकते हैं — प्रति bucket अंतिम value हमेशा वही रहेगी।</p></div>
+          </div>
+
+          <h2>Archiving</h2>
+          <p>जब कोई source नया डेटा एकत्र नहीं कर रहा हो, तो आप उसे dashboard में archive कर सकते हैं। Archiving आगे की ingestion रोक देती है: किसी archived source को target करने वाला request <strong>HTTP 409</strong> <code>"Data source is archived."</code> लौटाता है।</p>
+
+          <p>Archiving non-destructive है। मौजूदा डेटा अपनी जगह बना रहता है, और source पर बने कोई भी data profiles पहले से संग्रहित डेटा के विरुद्ध काम करते रहते हैं।</p>
+
+          <h2>अगले कदम</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">किसी source की raw series को ऐसी चीज़ में बदलें जिसे आप forecast कर सकें।</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingest API →</p><p class="doc-card-desc">ingest endpoint और उसके responses का पूरा reference।</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">Preparing data →</p><p class="doc-card-desc">साफ़, forecast-ready series लाने के लिए व्यावहारिक सलाह।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

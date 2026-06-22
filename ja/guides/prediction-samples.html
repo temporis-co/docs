@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>予測サンプルの扱い方 — Temporis ドキュメント</title>
+  <meta name="description" content="/v1/predict から返される多数のサンプリングされた軌道を、点予測と信頼区間の帯に変換します。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>ガイド</span><span class="sep">/</span><span>サンプルの扱い方</span></nav>
+          <h1>予測サンプルの扱い方</h1>
+          <p class="docs-lead"><code>/v1/predict</code> は多数のサンプリングされた軌道を返します。このガイドでは、それらを実際に必要なもの、すなわち点予測と信頼区間の帯に変換します。</p>
+
+          <h2>なぜ多数の軌道なのか</h2>
+          <p>Temporis はサンプリングによって予測を生成します。言語モデルがテキストを続けるのと同じように、履歴を読み取って、もっともらしい続きを描きます。各サンプルは未来そのものではなく、<strong>あり得る 1 つの未来</strong>です。<code>count</code> 個のサンプルを要求すると、<code>predictions</code> に <code>count</code> 個の独立した軌道が返されます。</p>
+          <p>多数持つことの意義は<strong>ばらつき</strong>にあります。軌道が一致する箇所ではモデルは自信を持っており、扇状に広がる箇所では未来が本当に不確実です。そのばらつきこそがあなたの不確実性の推定であり、だからこそ単一のサンプルが望むものになることはまれです。</p>
+          <p>そのばらつきを解像できるよう <code>count</code> を十分高く設定してください。少数のサンプルではブレが大きく信頼できない描像になります。<strong>20 から 100</strong> あたりであれば、ほとんどの系列で分布をうまく解像できます。多いほど滑らかになりますが、無料ではありません。</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">count はトークンを消費する</div><p>予測はモデルトークン単位で課金され、各軌道は予測範囲全体のトークンを生成します。<code>count</code> を 2 倍にすると、呼び出しのコストはおおよそ 2 倍になります。ばらつきがはっきり見える程度に十分なサンプルを使ったら、そこで止めてください。</p></div>
+          </div>
+
+          <h2>点予測</h2>
+          <p>サンプルを将来の各タイムスタンプにつき 1 つの数値にまとめるには、<strong>各タイムステップで軌道全体を集約します</strong>。<strong>中央値</strong>が良いデフォルトです。ときおり現れる極端な軌道に対して頑健だからです。お好みであれば平均値も使えます。</p>
+          <p>各予測の <code>data</code> 行は同じタイムスタンプを同じ順序で共有しているため、インデックスで揃えられます。ここでは <code>hourly_orders</code> プロファイルから 50 個のサンプルを要求し、タイムスタンプごとに <code>orders</code> の中央値予測を計算します。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>信頼区間の帯</h2>
+          <p>中央値は中心線を与え、帯はその周囲の範囲を与えます。サンプル全体にわたって<strong>タイムスタンプごとの分位点</strong>を計算してください。第 10、第 50、第 90 パーセンタイルがよく選ばれます。結果は 3 本の線、すなわち下端（p10）、中心（p50）、上端（p90）になります。</p>
+          <p>帯は「このタイムスタンプにおいて、サンプリングされた未来の約 80% が p10 と p90 の間に収まる」と読んでください。帯が狭ければモデルは自信を持っており、先を見るほど広がる帯は、遠い未来が近い未来より不確実であることをモデルが正直に伝えているのです。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>実践での count、temperature、top_p の選び方</h2>
+          <p>サンプルを形作るつまみは 3 つあり、それぞれ異なる役割を担います。</p>
+          <ul>
+            <li><code>count</code> は<strong>解像度</strong>を制御します。ばらつきをどれだけ細かくサンプリングするかです。分布の形状は変えず、それがどれだけはっきり見えるかだけを変えます。</li>
+            <li><code>temperature</code>（0 より大きい）は<strong>ばらつき</strong>を制御します。値が高いほど多様で広範囲の未来を描き、低いほどモデルが最も確からしいと考える経路の近くにサンプルが集まります。<code>1.0</code> 前後が中立です。</li>
+            <li><code>top_p</code>（0 から 1）は<strong>裾を切り詰めます</strong>。下げるとあり得ない極端な値をカットするので、驚くような飛びが減ります。<code>1.0</code> は分布全体を保持します。</li>
+          </ul>
+          <p>系列のブレやすさに応じた、妥当な出発点は次のとおりです。</p>
+
+          <div class="table-wrap"><table><thead><tr><th>系列の性格</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>安定して滑らか（一定の需要）</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>標準的</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>変動が激しくスパイクが多い（価格、バースト的なトラフィック）</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>これらは出発点として扱ってください。帯を描き、正直であるには狭すぎないか、あるいは役に立たないほど広すぎないかを見て、まず <code>temperature</code> を調整してください。</p>
+
+          <h2>loss による順位付け</h2>
+          <p>帯ではなく、代表的な単一の経路が欲しいこともあります。デモ、健全性チェック、あるいは「典型的な未来はどんな見た目か」を手早く確認したいときです。すべての軌道は <code>loss</code> を持っており、<strong>loss が低いほどモデルがその経路をより典型的だと判断した</strong>ことを意味します。これでソートして、リストの先頭を取ってください。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>実際の予測には、単一の軌道よりも中央値と帯を選んでください。loss が最も低い経路はあり得る 1 つの未来であって、それらの平均ではありません。順位付けは、きれいな例を選んだり外れ値を除外したりするのに最も役立ちます。</p></div>
+          </div>
+
+          <h2>関連項目</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">予測 →</p><p class="doc-card-desc">サンプリングがどのように履歴を確率的な予測に変えるか。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">リクエストとレスポンスの完全なリファレンス。</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">データプロファイルのチューニング →</p><p class="doc-card-desc">サンプリングする前に、その土台となる予測を正しくする。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Datenprofile — Temporis Docs</title>
+  <meta name="description" content="Ein Datenprofil ist das Rezept, das Temporis vorgibt, wie eine Datenquelle gelesen wird: welche Reihen, in welcher Taktung, wie viel Historie und wie sie bereinigt wird.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Konzepte</span><span class="sep">/</span><span>Datenprofile</span></nav>
+          <h1>Datenprofile</h1>
+          <p class="docs-lead">Ein Datenprofil ist das Rezept, das Temporis vorgibt, wie eine Datenquelle gelesen wird: welche Reihen, in welcher Taktung, wie viel Historie und wie sie bereinigt wird. Es ist das, wogegen Sie Prognosen erstellen.</p>
+
+          <h2>Was ein Profil definiert</h2>
+          <p>Eine <a href="data-sources.html">Datenquelle</a> enthält Rohdatenzeilen. Ein Profil verwandelt diese Zeilen in ein sauberes, regelmäßig getaktetes Signal, das das Modell lesen kann — es wählt die Reihen aus, ordnet Beobachtungen einem Zeitraster zu, entscheidet, wie viel Historie verwendet wird, und bereinigt Lücken. Wenn Sie <a href="../api/predict.html">predict</a> aufrufen, benennen Sie ein Profil, nicht eine Quelle.</p>
+
+          <p>Profile erstellen und bearbeiten Sie im Dashboard. Das Beispiel hier ist <code>hourly_orders</code>: Es liest die Reihe <code>orders</code> aus <code>store_metrics</code> auf einem Ein-Stunden-Raster (<code>interval</code> 3600).</p>
+
+          <h2>Auswahl der Daten</h2>
+          <h3>Quelle und Reihen</h3>
+          <p>Zwei Einstellungen bestimmen, was das Profil liest:</p>
+          <ul>
+            <li><code>data_source</code> — aus welcher Datenquelle gelesen wird.</li>
+            <li><code>names</code> — eine oder mehrere Reihennamen innerhalb dieser Quelle.</li>
+          </ul>
+          <p>Die Angabe eines einzelnen Namens ergibt eine univariate Prognose. Die Angabe mehrerer — etwa <code>orders</code> und <code>visitors</code> — macht das Profil <strong>multivariat</strong>: Die Reihen werden gemeinsam prognostiziert, sodass das Modell die Beziehung zwischen ihnen nutzen kann.</p>
+
+          <h2>Das Zeitraster</h2>
+          <p>Echte Beobachtungen treffen selten in einer perfekt gleichmäßigen Taktung ein, daher resampelt ein Profil sie auf ein regelmäßiges Raster.</p>
+
+          <p><code>interval</code> ist die Größe jedes Rasterbuckets in Sekunden. Mit <code>interval</code> 3600 werden Beobachtungen in Stundenbuckets eingeordnet. Das Raster wird an Ihrer <strong>jüngsten</strong> Beobachtung verankert und schreitet von dort rückwärts, sodass die aktuellsten Daten immer sauber auf dem Raster landen.</p>
+
+          <p>Das Modell liest nicht jeden Punkt einzeln. Es arbeitet in <em>Patches</em> — Abschnitten der Reihe mit fester Größe:</p>
+          <ul>
+            <li><code>patch_len</code> — aus wie vielen Punkten ein Patch besteht.</li>
+            <li><code>patch_spacing</code> — der Schritt zwischen den verwendeten Punkten, eine Form des Downsamplings.</li>
+            <li><code>num_patches</code> — die meisten Patches an Historie, die als Kontext verwendet werden.</li>
+            <li><code>min_patches</code> — die wenigsten Patches an Historie, die erforderlich sind, um eine Prognose zu liefern.</li>
+          </ul>
+
+          <p>Anschaulich: Der Kontext, den das Modell sieht, sind ungefähr <code>num_patches</code> Patches aktueller Historie. Wenn ein Profil weniger als <code>min_patches</code> Patches verfügbar hat, kann es nicht liefern, und Sie erhalten <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>Das Spacing legt auch Ihre Prognoseauflösung fest. Der effektive Schritt zwischen Prognosepunkten beträgt <code>interval × patch_spacing</code> Sekunden. Mit <code>interval</code> 3600 und <code>patch_spacing</code> 1 liegen die Prognosen eine Stunde auseinander.</p>
+
+          <h2>Bereinigung der Reihe</h2>
+          <p>Nach dem Resampling kann es Buckets ohne Beobachtung geben. Zwei Einstellungen entscheiden, wie das gehandhabt wird:</p>
+          <ul>
+            <li><code>fill_limit</code> — die längste Folge aufeinanderfolgender leerer Buckets, die per Forward-Fill aufgefüllt wird (der letzte bekannte Wert wird fortgeführt). Eine längere Lücke wird als tatsächlich fehlend behandelt, und diese Zeilen werden stattdessen verworfen.</li>
+            <li><code>exclude_window</code> — ein wiederkehrendes Tageszeitfenster, das ausgeblendet wird, angegeben als Zeitzone plus Start und Ende. Verwenden Sie es für erwartete Totzeiten, etwa Nachtstunden, in denen ein Markt geschlossen ist, damit diese ruhige Phase die Reihe nicht verzerrt.</li>
+          </ul>
+
+          <h2>Niveaus vs. Wachstum</h2>
+          <p>Manche Reihen lassen sich am besten über ihr <em>Niveau</em> modellieren, andere über ihre <em>relative Veränderung</em>. Die Einstellung <code>use_diffs</code> (die Log-Diff-Transformation) schaltet das Modell darauf um, mit logarithmischem Wachstum zu arbeiten — proportionale Veränderung von einem Schritt zum nächsten — statt mit dem Rohwert.</p>
+
+          <p>Aktivieren Sie sie für Reihen, die sich multiplikativ bewegen oder über einen weiten Bereich stark trenden: Umsatz, Preise, alles, bei dem eine Bewegung um 10 % wichtiger ist als eine absolute. Lassen Sie sie deaktiviert für Reihen, die in einem begrenzten, ungefähr stationären Bereich liegen, wo das Rohniveau bereits das natürliche Vorhersageziel ist.</p>
+
+          <h2>Bereitschaft</h2>
+          <p>Ein Profil ist nicht in dem Moment nutzbar, in dem Sie es erstellen. Temporis berechnet zunächst Normalisierungsstatistiken — es lernt die typische Streuung Ihrer Daten, um Werte in den vom Modell erwarteten Bereich zu skalieren. Bis genügend Daten dafür vorliegen, ist das Profil nicht bereit, und das Dashboard zeigt seinen Bereitschaftsstatus an.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Eine Prognose gegen ein Profil, das nicht bereit ist, gibt <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> zurück. Warten Sie, bis das Dashboard das Profil als bereit meldet, und rufen Sie dann predict auf.</p></div>
+          </div>
+
+          <h2>Einstellungsreferenz</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Einstellung</th><th>Was sie steuert</th><th>Beispiel</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>Welche Datenquelle das Profil liest.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>Zu lesende Reihen; mehrere Namen werden gemeinsam prognostiziert (multivariat).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>Resampling-Bucket in Sekunden; Raster an der jüngsten Beobachtung verankert.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>Anzahl der Punkte in einem Patch — der Abschnitt, den das Modell jeweils liest und schreibt.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>Schritt zwischen den verwendeten Punkten; Prognoseschritt ist <code>interval × patch_spacing</code> Sekunden.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>Maximale Anzahl an Patches an Historie, die als Kontext verwendet werden.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>Minimale Anzahl an Patches, die zum Liefern erforderlich sind; darunter 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>Längste Folge leerer Buckets für Forward-Fill; längere Lücken verwerfen Zeilen.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>Relative Veränderung (logarithmisches Wachstum) statt Rohniveau modellieren.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>Wiederkehrendes Tageszeitfenster zum Ausblenden (Zeitzone + Start + Ende).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Unsicher, welche Werte Sie wählen sollen? <a href="../guides/tuning-profile.html">Ein Profil abstimmen</a> führt Sie durch die Wahl von <code>interval</code>, Historienlänge und den Bereinigungseinstellungen für Ihre Daten.</p></div>
+          </div>
+
+          <h2>Nächste Schritte</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ein Profil abstimmen →</p><p class="doc-card-desc">Wie Sie für jede Einstellung gute Werte wählen.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prognosen →</p><p class="doc-card-desc">Was Sie zurückerhalten, wenn Sie gegen ein Profil prognostizieren.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict-API →</p><p class="doc-card-desc">Die vollständige Referenz für den Predict-Endpunkt.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

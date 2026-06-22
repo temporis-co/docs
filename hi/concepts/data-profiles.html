@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data profiles — Temporis Docs</title>
+  <meta name="description" content="data profile वह नुस्खा है जो Temporis को बताता है कि किसी data source को कैसे पढ़ना है: कौन-सी series, किस cadence पर, कितना इतिहास, और इसे कैसे साफ़ करना है।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Data profiles</span></nav>
+          <h1>Data profiles</h1>
+          <p class="docs-lead">data profile वह नुस्खा है जो Temporis को बताता है कि किसी data source को कैसे पढ़ना है: कौन-सी series, किस cadence पर, कितना इतिहास, और इसे कैसे साफ़ करना है। यही वह चीज़ है जिसके विरुद्ध आप forecast करते हैं।</p>
+
+          <h2>एक profile क्या परिभाषित करता है</h2>
+          <p>एक <a href="data-sources.html">data source</a> raw rows रखता है। एक profile उन rows को एक साफ़, नियमित रूप से दूरी वाले signal में बदलता है जिसे model पढ़ सके — series चुनना, observations को एक time grid पर snap करना, यह तय करना कि कितना इतिहास उपयोग करना है, और gaps को व्यवस्थित करना। जब आप <a href="../api/predict.html">predict</a> call करते हैं, तो आप किसी source को नहीं, बल्कि एक profile को नाम देते हैं।</p>
+
+          <p>आप profiles को dashboard में बनाते और संपादित करते हैं। यहाँ का उदाहरण <code>hourly_orders</code> है: यह <code>store_metrics</code> से <code>orders</code> series को एक-घंटे की grid पर पढ़ता है (<code>interval</code> 3600)।</p>
+
+          <h2>डेटा का चयन</h2>
+          <h3>Source और series</h3>
+          <p>दो settings चुनती हैं कि profile क्या पढ़ता है:</p>
+          <ul>
+            <li><code>data_source</code> — किस data source से पढ़ना है।</li>
+            <li><code>names</code> — उस source के भीतर एक या अधिक series names।</li>
+          </ul>
+          <p>एक अकेला name listing करने पर एक univariate forecast मिलता है। कई listing करने पर — मान लें <code>orders</code> और <code>visitors</code> — profile <strong>multivariate</strong> बन जाता है: series को संयुक्त रूप से forecast किया जाता है, ताकि model उनके बीच के संबंध का उपयोग कर सके।</p>
+
+          <h2>time grid</h2>
+          <p>असली observations शायद ही कभी एकदम समान cadence पर आते हैं, इसलिए एक profile उन्हें एक नियमित grid पर resample करता है।</p>
+
+          <p><code>interval</code> सेकंड्स में प्रत्येक grid bucket का आकार है। <code>interval</code> 3600 के साथ, observations को घंटेवार buckets में snap किया जाता है। grid आपके <strong>सबसे हाल के</strong> observation पर anchored होती है और वहाँ से पीछे की ओर बढ़ती है, ताकि नवीनतम डेटा हमेशा grid पर साफ़-साफ़ बैठे।</p>
+
+          <p>model हर बिंदु को एक-एक करके नहीं पढ़ता। यह <em>patches</em> में काम करता है — series के निश्चित-आकार के टुकड़े:</p>
+          <ul>
+            <li><code>patch_len</code> — कितने बिंदु एक patch बनाते हैं।</li>
+            <li><code>patch_spacing</code> — जिन बिंदुओं का उपयोग होता है उनके बीच का stride, एक प्रकार का downsampling।</li>
+            <li><code>num_patches</code> — context के रूप में यह अधिकतम कितने patches के इतिहास का उपयोग करेगा।</li>
+            <li><code>min_patches</code> — एक prediction देने के लिए कम से कम कितने patches का इतिहास आवश्यक है।</li>
+          </ul>
+
+          <p>सहज रूप से: model जो context देखता है वह मोटे तौर पर हाल के इतिहास के <code>num_patches</code> patches होता है। यदि किसी profile के पास <code>min_patches</code> से कम patches उपलब्ध हों, तो वह serve नहीं कर सकता और आपको <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code> मिलता है।</p>
+
+          <p>Spacing आपके forecast का resolution भी तय करता है। forecast बिंदुओं के बीच प्रभावी step <code>interval × patch_spacing</code> सेकंड्स होता है। <code>interval</code> 3600 और <code>patch_spacing</code> 1 के साथ, predictions एक घंटे की दूरी पर बैठती हैं।</p>
+
+          <h2>series को साफ़ करना</h2>
+          <p>resampling के बाद, कुछ buckets में कोई observation नहीं हो सकता। दो settings तय करती हैं कि इसे कैसे संभाला जाए:</p>
+          <ul>
+            <li><code>fill_limit</code> — लगातार खाली buckets का सबसे लंबा क्रम जिसे forward-fill किया जाएगा (अंतिम ज्ञात value को आगे ले जाते हुए)। इससे लंबा gap वास्तव में missing माना जाता है और उन rows को इसके बजाय हटा दिया जाता है।</li>
+            <li><code>exclude_window</code> — मास्क करने के लिए दिन के समय की एक आवर्ती window, जो एक timezone के साथ-साथ एक start और stop के रूप में दी जाती है। इसे उस अपेक्षित dead time के लिए उपयोग करें, जैसे रात के घंटे जब कोई market बंद रहता है, ताकि वह शांत अवधि series को विकृत न करे।</li>
+          </ul>
+
+          <h2>Levels बनाम growth</h2>
+          <p>कुछ series को उनके <em>level</em> से सबसे अच्छी तरह model किया जाता है; अन्य को उनके <em>सापेक्ष परिवर्तन</em> से। <code>use_diffs</code> setting (log-diff transform) model को raw value के बजाय log growth — एक step से अगले तक का आनुपातिक परिवर्तन — पर काम करने के लिए switch कर देती है।</p>
+
+          <p>इसे उन series के लिए चालू करें जो गुणात्मक रूप से चलती हैं या एक विस्तृत range में मज़बूती से trend करती हैं: revenue, prices, कुछ भी जहाँ 10% का बदलाव एक absolute बदलाव से अधिक मायने रखता है। इसे उन series के लिए बंद रखें जो एक bounded, मोटे तौर पर stationary range में रहती हैं, जहाँ raw level पहले से ही predict करने के लिए स्वाभाविक चीज़ है।</p>
+
+          <h2>Readiness</h2>
+          <p>profile बनाते ही उपयोग करने योग्य नहीं होता। Temporis पहले normalization statistics की गणना करता है — आपके डेटा के सामान्य फैलाव को सीखते हुए ताकि वह values को उस range में scale कर सके जिसकी model अपेक्षा करता है। जब तक उसके पास ऐसा करने के लिए पर्याप्त डेटा न हो, profile तैयार नहीं होता, और dashboard उसकी readiness state दिखाता है।</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>ऐसे profile के विरुद्ध predict करना जो तैयार नहीं है, <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> लौटाता है। तब तक प्रतीक्षा करें जब तक dashboard profile को तैयार न बताए, फिर predict call करें।</p></div>
+          </div>
+
+          <h2>Settings reference</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Setting</th><th>यह क्या नियंत्रित करता है</th><th>उदाहरण</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>profile किस data source को पढ़ता है।</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>पढ़ने के लिए series; कई names को संयुक्त रूप से forecast किया जाता है (multivariate)।</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>सेकंड्स में resampling bucket; grid सबसे हाल के observation पर anchored।</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>एक patch में बिंदुओं की संख्या — वह टुकड़ा जिसे model एक बार में पढ़ता और लिखता है।</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>उपयोग किए गए बिंदुओं के बीच stride; forecast step <code>interval × patch_spacing</code> सेकंड्स है।</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>context के रूप में उपयोग किए गए इतिहास के अधिकतम patches।</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>serve करने के लिए न्यूनतम आवश्यक patches; इससे नीचे, 409 "Not enough data"।</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>forward-fill करने के लिए खाली buckets का सबसे लंबा क्रम; लंबे gaps rows हटा देते हैं।</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>raw level के बजाय सापेक्ष परिवर्तन (log growth) को model करें।</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>मास्क करने के लिए दिन के समय की आवर्ती window (timezone + start + stop)।</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>निश्चित नहीं कि कौन-सी values चुनें? <a href="../guides/tuning-profile.html">Tuning a profile</a> आपके डेटा के लिए <code>interval</code>, इतिहास की लंबाई और cleaning settings चुनने की प्रक्रिया समझाता है।</p></div>
+          </div>
+
+          <h2>अगले कदम</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Tuning a profile →</p><p class="doc-card-desc">हर setting के लिए अच्छी values कैसे चुनें।</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions →</p><p class="doc-card-desc">किसी profile के विरुद्ध forecast करने पर आपको क्या वापस मिलता है।</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">predict endpoint का पूरा reference।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

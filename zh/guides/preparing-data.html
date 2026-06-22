@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>准备你的数据 — Temporis 文档</title>
+  <meta name="description" content="如何将你的时间序列历史以干净、一致的格式导入 Temporis，让模型能够更好地读取。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>指南</span><span class="sep">/</span><span>准备你的数据</span></nav>
+          <h1>准备你的数据</h1>
+          <p class="docs-lead">好的预测从干净、一致的输入开始。本指南介绍如何将你的历史数据以模型能够良好读取的格式导入 Temporis。</p>
+
+          <h2>始终使用 Unix 秒</h2>
+          <p>你发送的每个时间戳都是一个 <strong>Unix 秒</strong> 的整数计数 —— 即自 1970-01-01 00:00:00 UTC 以来经过的秒数。不是毫秒，也不是 ISO 日期字符串。如果你的源系统提供的是毫秒，请在发送前除以 1000。</p>
+          <p>选定一套时区规范并始终遵循它。最简单且总是有效的规则是：<strong>所有数据都以 UTC 存储</strong>。Unix 秒本身就是 UTC，因此只要你在发送前把每个本地时间戳转换为其真实的 UTC 时刻，你的序列就能保持内部一致。在同一序列中混用本地时间和 UTC 值会悄无声息地把数据点错位，并破坏模型学习的日内规律。</p>
+          <p>你的时间戳不必落在整数点上。数据画像的 <code>interval</code> 会把观测值对齐到一个规则网格上 —— 对于 <code>hourly_orders</code> 画像，每个数据点都会归入最接近的整点。你只需提供每个观测值实际发生的真实时刻；对齐由画像负责处理。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">一个快速转换</div><p>在 Python 中，<code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> 可以为一个明确的 UTC 时刻得到对应的 Unix 秒。请始终附上时区，使转换无歧义。</p></div>
+          </div>
+
+          <h2>分批发送历史数据</h2>
+          <p>你很少只需要发送一个观测值 —— 你拥有的是数月乃至数年的数据。数据导入端点每次请求可以接收多条记录，因此请把你的回填数据切分成每批几千条记录，循环发送，而不是一条一条地发送。</p>
+          <p>数据导入是<strong>幂等的</strong>。upsert 键是 <code>(timestamp, name)</code>，因此重新发送一条你已经发过的记录只会用相同的值覆盖它 —— 一次空操作。这意味着回填可以安全地重复运行：如果某一批中途失败或你的脚本崩溃了，直接重新开始即可。你不会产生重复数据。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>导入成功会返回 <strong>HTTP 204 No Content</strong>，响应体为空，因此无需解析任何内容 —— 只需确认状态码。完整的请求格式请参见<a href="../api/ingest.html">导入参考</a>。</p>
+
+          <h2>为模型提供足够的历史数据</h2>
+          <p>数据画像在<strong>就绪</strong>之前无法提供预测 —— Temporis 需要足够的历史数据来计算用于读取你序列的归一化统计量。而且每次预测都至少需要 <code>min_patches</code> 量的近期上下文，否则请求会返回 <strong>409 "Not enough data for this data profile."</strong></p>
+          <p>实用的经验法则是：<strong>拿不准时，多发送一些历史数据。</strong>更多的历史数据能让画像就绪、轻松超过 <code>min_patches</code>，并为模型提供更多季节性周期可供学习。发送超过上下文窗口所需的数据并不会带来任何惩罚 —— 超出 <code>num_patches</code> 的更早数据点在预测时根本不会被读取。</p>
+          <p>要了解 <code>min_patches</code>、<code>num_patches</code> 和"就绪"的含义，以及它们与你的 <code>interval</code> 之间的关系，请阅读<a href="../concepts/data-profiles.html">数据画像</a>。</p>
+
+          <h2>不规则的时间戳与数据缺口</h2>
+          <p>真实数据是杂乱的。传感器漏读一次、任务晚跑了几分钟、商店在节假日歇业。你不需要手动清理这些 —— 画像的重采样步骤会处理它们。</p>
+          <p><code>interval</code> 会把你的观测值归入一个规则网格，从而吸收<em>轻微不规则</em>的时间戳：一个在 10:58 到达的读数和一个在 11:03 到达的读数都会落入 11:00 这个桶。对于<em>缺失</em>的桶，<code>fill_limit</code> 设定 Temporis 在放弃之前会前向填充多少个连续的空桶。短缺口会被桥接；长缺口则保留为空洞，相应的行会被丢弃而不是凭空捏造。</p>
+          <p>如果你的序列存在<em>周期性</em>的停滞时段 —— 在某些时段内根本不可能发生任何事 —— 就完全不要把它当作缺失数据看待。<code>exclude_window</code> 会屏蔽那段每日的时间范围，使其永远不会扭曲序列。这是一个画像设置，详见<a href="../concepts/data-profiles.html">数据画像</a>。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>你按照手头的原始观测值原样发送。它们落在哪里、缺口如何填充、哪些停滞时段被忽略，都是由画像做出的决策 —— 而不是你预先烘焙进数据里的变换。</p></div>
+          </div>
+
+          <h2>对齐多个序列</h2>
+          <p>一个画像可以同时读取多个序列 —— 即一个对它们进行联合预测的多变量画像。要让这种方式良好运作，这些序列需要一条<strong>共同的时间线</strong>：在同一组时间戳上发送每个序列的观测值，使它们在归桶后能够对齐成行。</p>
+          <p>你可以在单次导入请求中发送多个序列 —— 只需在每个时间戳上为每个序列各包含一条记录。下面是两个序列 <code>orders</code> 和 <code>visitors</code>，它们共享同一条时间线：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>如果某个序列在另一个序列存在数据的时间戳上缺失，那个桶会像处理其他任何缺口一样，按 <code>fill_limit</code> 进行填充 —— 因此少量的零散缺失不会破坏对齐，但当各序列以同一节奏变化时，你会获得最干净的联合预测。</p>
+
+          <h2>修正与回填</h2>
+          <p>发现了一个错误的值？要重述某个季度的数据？你不需要删除或修补任何特别的东西 —— 只需重新发送修正后的记录。由于 upsert 键是 <code>(timestamp, name)</code>，在一个已存在的 timestamp+name 上发送一个新的 <code>value</code> 会<strong>覆盖</strong>旧值。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">重复运行没有副作用</div><p>由于每次导入都是幂等的 upsert，修正后的回填可以安全地与你已经发送的数据重叠。如果重新发送整个受影响的区间比精确计算哪些点发生了变化更省事，就直接重新发送整个区间。</p></div>
+          </div>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">数据源 →</p><p class="doc-card-desc">存储的 (timestamp, name, value) 行是如何组织的。</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">读取数据源的配方：时间间隔、补丁、缺口。</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">调优数据画像 →</p><p class="doc-card-desc">让每项设置都贴合你数据的节奏。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prognose erstellen — Temporis Docs</title>
+  <meta name="description" content="Ziehen Sie mit dem predict-Endpunkt eine oder mehrere gesampelte Zukunfts-Trajektorien aus einem Temporis-Datenprofil.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/predict" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>API-Referenz</span><span class="sep">/</span><span>Prognose erstellen</span></nav>
+          <h1>Prognose erstellen</h1>
+          <p class="docs-lead">Ziehen Sie eine oder mehrere gesampelte Zukünfte aus einem Datenprofil. Erfordert eine hinterlegte Karte.</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/predict</span></div>
+
+          <h2>Anfrage-Body</h2>
+          <p>Sie benennen ein Datenprofil und die gewünschte Form des Samples.</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Der Name eines Ihrer Profile oder eines öffentlichen Profils wie <code>temporis/polymarket</code>.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Die Anzahl der unabhängigen Zukunfts-Trajektorien, die gezogen werden sollen. Muss mindestens 1 sein.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Sampling-Temperatur, größer als 0. Höhere Werte streuen die Samples weiter; niedrigere halten sie nahe am wahrscheinlichsten Pfad.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Nucleus-Sampling-Grenzwert im Bereich von 0 bis 1. Niedrigere Werte schneiden den unwahrscheinlichen Rand ab; 1.0 behält die vollständige Verteilung bei.</p>
+            </div>
+          </div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p><code>count</code>, <code>temperature</code> und <code>top_p</code> werden ausführlich unter <a href="../concepts/predictions.html">Prognosen</a> erklärt.</p></div>
+          </div>
+
+          <h2>Beispielanfrage</h2>
+          <p>Diese zieht fünf Trajektorien aus dem Profil <code>hourly_orders</code> bei neutraler Temperatur:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 5,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_profile": "hourly_orders",
+		"count":        5,
+		"temperature":  1.0,
+		"top_p":        0.9,
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/predict", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&amp;result)
+	fmt.Println(result)
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/predict");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_profile" =&gt; "hourly_orders",
+        "count"        =&gt; 5,
+        "temperature"  =&gt; 1.0,
+        "top_p"        =&gt; 0.9,
+    ]),
+]);
+$result = json_decode(curl_exec($ch), true);
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/predict")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_profile: "hourly_orders",
+  count: 5,
+  temperature: 1.0,
+  top_p: 0.9,
+}.to_json
+
+res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+result = JSON.parse(res.body)</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/predict"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.body());</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+var response = await client.PostAsync("https://api.temporis.co/v1/predict", content);
+var result = await response.Content.ReadAsStringAsync();
+Console.WriteLine(result);</code></pre></div>
+          </div>
+
+          <h2>Antwortfelder</h2>
+          <p>Eine erfolgreiche Anfrage gibt HTTP 200 mit diesem Body zurück.</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">Ein eindeutiger Bezeichner für diese Prognoseanfrage.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">Gibt den von Ihnen angefragten Profilnamen zurück.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Unix-Sekunden: der letzte beobachtete Zeitstempel, ab dem die Prognose fortgesetzt wird. Jede Trajektorie schreitet von hier aus voran.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">Die gesampelten Trajektorien. Die Länge entspricht dem von Ihnen angefragten <code>count</code>.</p>
+            </div>
+          </div>
+
+          <h3>Prediction-Objekt</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">loss</span><span class="param-type">number</span></div>
+              <p class="param-desc">Niedriger bedeutet, dass das Modell diese Trajektorie als typischer einstuft. Verwenden Sie ihn, um Samples zu ordnen oder ein repräsentatives Sample auszuwählen.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data</span><span class="param-type">array</span></div>
+              <p class="param-desc">Die Prognosezeilen. Jede Zeile hat einen <code>timestamp</code> plus ein Feld pro Reihenname im Profil.</p>
+            </div>
+          </div>
+
+          <h2>Beispielantwort</h2>
+          <p>Für das obige Single-Series-Profil <code>orders</code>, mit <code>predict_from</code> bei der letzten beobachteten Stunde und Zeilen, die jeweils um eine Stunde voranschreiten:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "a3f9c1d7e84b2065",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718852400,
+  "predictions": [
+    {
+      "loss": 1.84,
+      "data": [
+        { "timestamp": 1718856000, "orders": 58 },
+        { "timestamp": 1718859600, "orders": 61 },
+        { "timestamp": 1718863200, "orders": 55 }
+      ]
+    },
+    {
+      "loss": 2.07,
+      "data": [
+        { "timestamp": 1718856000, "orders": 49 },
+        { "timestamp": 1718859600, "orders": 66 },
+        { "timestamp": 1718863200, "orders": 72 }
+      ]
+    }
+    // remaining samples omitted
+  ]
+}</code></pre></div>
+
+          <h2>Öffentliche Datenprofile</h2>
+          <p>Sie können einen geteilten Datensatz ganz ohne eigene Einrichtung prognostizieren, indem Sie einen öffentlichen Profilnamen als <code>data_profile</code> übergeben. Diese werden von Temporis gepflegt und sind bereit zur Auslieferung:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 3, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+
+          <h2>Fehler</h2>
+          <p>Fehler geben den HTTP-Status plus einen JSON-Body der Form <code>{ "detail": "..." }</code> zurück.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Status</th><th>detail-Meldung</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td>400</td><td>Invalid prediction parameters.</td><td>Ein Parameter liegt außerhalb des zulässigen Bereichs, etwa count unter 1 oder temperature nicht größer als 0.</td></tr>
+              <tr><td>402</td><td>Add a credit card before using the API. / There is a payment issue. Add a new credit card.</td><td>Keine aktive Abrechnung. Fügen Sie im Dashboard eine Karte hinzu oder korrigieren Sie sie.</td></tr>
+              <tr><td>404</td><td>Data profile not found.</td><td>Es existiert kein Profil mit diesem Namen.</td></tr>
+              <tr><td>404</td><td>Data profile is not ready to serve.</td><td>Das Profil existiert, hat aber die Vorbereitung noch nicht abgeschlossen.</td></tr>
+              <tr><td>409</td><td>Not enough data for this data profile.</td><td>Das Profil verfügt über weniger als seine mindestens erforderliche Historie. Nehmen Sie mehr Daten auf und versuchen Sie es erneut.</td></tr>
+              <tr><td>502</td><td>Prediction failed.</td><td>Ein vorübergehender serverseitiger Fehler. Ein erneuter Versuch mit Backoff ist sicher.</td></tr>
+            </tbody>
+          </table></div>
+          <p>Siehe <a href="../api/errors.html">Fehler &amp; Statuscodes</a> für die vollständige Referenz.</p>
+
+          <h2>Verwandt</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prognosen →</p><p class="doc-card-desc">Wie Sampling, count, temperature und top_p eine Prognose formen.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Arbeiten mit Samples →</p><p class="doc-card-desc">Trajektorien in Intervalle und Punktprognosen umwandeln.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Datenprofile →</p><p class="doc-card-desc">Das Rezept, das eine Quelle für die Prognose vorbereitet.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

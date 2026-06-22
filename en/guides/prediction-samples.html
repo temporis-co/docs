@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Working with prediction samples — Temporis Docs</title>
+  <meta name="description" content="Turn the many sampled trajectories from /v1/predict into a point forecast and a confidence band.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guides</span><span class="sep">/</span><span>Working with samples</span></nav>
+          <h1>Working with prediction samples</h1>
+          <p class="docs-lead"><code>/v1/predict</code> returns many sampled trajectories. This guide turns them into the things you actually need: a point forecast and a confidence band.</p>
+
+          <h2>Why many trajectories</h2>
+          <p>Temporis generates forecasts by sampling — it reads your history and draws a plausible continuation, the way a language model continues text. Each draw is <strong>one possible future</strong>, not the future. Ask for <code>count</code> draws and you get <code>count</code> independent trajectories in <code>predictions</code>.</p>
+          <p>The point of having many is the <strong>spread</strong>. Where the trajectories agree, the model is confident; where they fan out, the future is genuinely uncertain. That spread is your uncertainty estimate — which is why a single sample is rarely what you want.</p>
+          <p>Set <code>count</code> high enough to resolve that spread. A handful of draws gives a jittery, unreliable picture; somewhere in the range of <strong>20 to 100</strong> resolves the distribution well for most series. More is smoother but not free.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Count costs tokens</div><p>Prediction is metered per model token, and every trajectory generates a full horizon of tokens. Doubling <code>count</code> roughly doubles the cost of the call. Use enough samples to see the spread clearly, then stop.</p></div>
+          </div>
+
+          <h2>A point forecast</h2>
+          <p>To collapse the samples into one number per future timestamp, <strong>aggregate across trajectories at each timestep</strong>. The <strong>median</strong> is a good default — it's robust to the occasional wild trajectory; the mean works too if you prefer it.</p>
+          <p>Each prediction's <code>data</code> rows share the same timestamps in the same order, so you can line them up by index. Here we request 50 samples from the <code>hourly_orders</code> profile and compute a median <code>orders</code> forecast per timestamp:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>Confidence bands</h2>
+          <p>The median gives you a center line; a band gives you the range around it. Compute <strong>per-timestamp quantiles</strong> across the samples — the 10th, 50th, and 90th percentiles are a common choice. The result is three lines: a low edge (p10), the center (p50), and a high edge (p90).</p>
+          <p>Read the band as "about 80% of sampled futures fall between p10 and p90 at this timestamp." A narrow band means the model is confident; a band that widens as you look further ahead is the model honestly telling you the far future is less certain than the near future.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>Choosing count, temperature, top_p in practice</h2>
+          <p>Three knobs shape the samples, and they do different jobs:</p>
+          <ul>
+            <li><code>count</code> controls <strong>resolution</strong> — how finely the spread is sampled. It does not change the shape of the distribution, only how clearly you see it.</li>
+            <li><code>temperature</code> (greater than 0) controls <strong>spread</strong> — higher values draw more diverse, wider-ranging futures; lower values cluster the samples near the model's most-likely path. About <code>1.0</code> is neutral.</li>
+            <li><code>top_p</code> (0 to 1) <strong>trims the tails</strong> — lowering it cuts the unlikely extremes, so you get fewer surprising jumps; <code>1.0</code> keeps the full distribution.</li>
+          </ul>
+          <p>Sensible starting points, depending on how jumpy your series is:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>Series character</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>Stable, smooth (steady demand)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>Typical</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>Volatile, spiky (prices, bursty traffic)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>Treat these as a place to begin. Draw a band, look at whether it's too tight to be honest or so wide it's useless, and adjust <code>temperature</code> first.</p>
+
+          <h2>Ranking by loss</h2>
+          <p>Sometimes you want a single representative path rather than a band — for a demo, a sanity check, or a quick "what does a typical future look like." Every trajectory carries a <code>loss</code>, and <strong>lower loss means the model considered that path more typical</strong>. Sort by it and take the front of the list:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>For an actual forecast, prefer the median and a band over any single trajectory — the lowest-loss path is one plausible future, not an average of them. Ranking is most useful for picking a clean example or filtering outliers.</p></div>
+          </div>
+
+          <h2>Related</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions →</p><p class="doc-card-desc">How sampling turns history into a probabilistic forecast.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">The full request and response reference.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Tuning a data profile →</p><p class="doc-card-desc">Get the underlying forecast right before you sample it.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">On this page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

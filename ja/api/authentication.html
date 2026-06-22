@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>認証 — Temporis ドキュメント</title>
+  <meta name="description" content="すべての Temporis API リクエストを認証するベアラートークンの作成、送信、安全な管理方法を解説します。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>API リファレンス</span><span class="sep">/</span><span>認証</span></nav>
+          <h1>認証</h1>
+          <p class="docs-lead">すべての Temporis API リクエストは、ベアラートークンで認証します。ここでは、トークンの作成方法、送信方法、安全な管理方法を説明します。</p>
+
+          <h2>アクセストークン</h2>
+          <p>アクセストークンは、ダッシュボードの <a href="https://platform.temporis.co">Access Tokens</a> から作成します。トークンは <code>ts_</code> を接頭辞とする長いランダムな文字列です。</p>
+          <p>完全なトークンは、作成した瞬間に<strong>一度だけ</strong>表示されます。Temporis はサーバー側でそのハッシュのみを保存し、トークン自体は決して保存しません。つまり、紛失したトークンは復元できません。紛失した場合は、そのトークンを削除して新しいものを作成してください。</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">トークンはパスワードと同様に扱う</div><p>あなたのトークンを持つ者は誰でもデータを取り込み、予測を実行できます。そして予測はあなたのアカウントに課金されます。それに応じて厳重に保護してください。</p></div>
+          </div>
+
+          <h2>リクエストの認証</h2>
+          <p>すべてのリクエストで、<code>Bearer</code> スキームを使い、<code>Authorization</code> ヘッダーにトークンを送信します:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>本ドキュメント全体の例では、トークンを <code>TEMPORIS_TOKEN</code> 環境変数から読み取るため、シークレットがソースコードに現れることはありません。シェルで一度エクスポートしてください:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>そして、ヘッダーとして付与します:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>認証に失敗した場合</h2>
+          <p><code>Authorization</code> ヘッダーが欠落または不正である場合、もしくはトークンが不明な場合、API は HTTP 401 と、何が問題だったかを示す JSON ボディを返します:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>ヘッダーが欠落または不正な場合は、代わりに <code>{ "detail": "Missing access token." }</code> を返します。いずれも 401 です。レスポンスの完全な一覧については、<a href="../api/errors.html">エラーとステータスコード</a>を参照してください。</p>
+
+          <h2>トークンを安全に保つ</h2>
+          <p>いくつかの習慣により、トークンが不正な手に渡るのを防げます:</p>
+          <ul>
+            <li><strong>トークンを決してソース管理にコミットしない</strong>こと。また、クライアントサイドのコードに含めないこと。ブラウザやモバイルアプリは、そのソースをユーザーに配布します。</li>
+            <li><strong>トークンは環境変数やシークレットマネージャーから読み取る。</strong> ログ、スクリーンショット、チケットには含めないでください。</li>
+            <li><strong>サービスごとに別々のトークンを作成する</strong>ことで、他に影響を与えずに 1 つだけを失効できます。</li>
+            <li><strong>ダッシュボードでトークンを削除すれば即座に失効します。</strong> 削除は即時に有効になり、そのトークンを使う次のリクエストは 401 を受け取ります。</li>
+          </ul>
+
+          <h2>次のステップ</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">レコードの取り込み →</p><p class="doc-card-desc">観測値をデータソースへ送信します。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">予測の作成 →</p><p class="doc-card-desc">データプロファイルからサンプリングされた未来を引き出します。</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">クイックスタート →</p><p class="doc-card-desc">トークンから最初の予測までを行います。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authentification — Documentation Temporis</title>
+  <meta name="description" content="Créez, envoyez et protégez les jetons bearer qui authentifient chaque requête de l'API Temporis.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Référence de l'API</span><span class="sep">/</span><span>Authentification</span></nav>
+          <h1>Authentification</h1>
+          <p class="docs-lead">Chaque requête de l'API Temporis s'authentifie avec un jeton bearer. Voici comment en créer un, l'envoyer et le garder en sécurité.</p>
+
+          <h2>Jetons d'accès</h2>
+          <p>Vous créez des jetons d'accès dans le tableau de bord, sous <a href="https://platform.temporis.co">Jetons d'accès</a>. Un jeton est une longue chaîne aléatoire préfixée par <code>ts_</code>.</p>
+          <p>Le jeton complet est affiché <strong>une seule fois</strong>, au moment où vous le créez. Temporis ne stocke côté serveur qu'un hachage de celui-ci, jamais le jeton lui-même. Cela signifie qu'un jeton perdu ne peut pas être récupéré — si vous le perdez, supprimez-le et créez-en un nouveau.</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">Traitez les jetons comme des mots de passe</div><p>Quiconque détient l'un de vos jetons peut ingérer des données et exécuter des prédictions — et les prédictions sont facturées sur votre compte. Protégez-les en conséquence.</p></div>
+          </div>
+
+          <h2>Authentifier une requête</h2>
+          <p>Envoyez le jeton dans l'en-tête <code>Authorization</code> de chaque requête, en utilisant le schéma <code>Bearer</code> :</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>Les exemples tout au long de cette documentation lisent le jeton depuis une variable d'environnement <code>TEMPORIS_TOKEN</code>, afin que le secret n'apparaisse jamais dans le code source. Exportez-le une fois dans votre shell :</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>Puis attachez-le comme en-tête :</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>Quand l'authentification échoue</h2>
+          <p>Si l'en-tête <code>Authorization</code> est manquant ou mal formé, ou si le jeton est inconnu, l'API répond avec HTTP 401 et un corps JSON décrivant ce qui n'a pas fonctionné :</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>Un en-tête manquant ou mal formé renvoie plutôt <code>{ "detail": "Missing access token." }</code>. Les deux sont des 401. Consultez <a href="../api/errors.html">Erreurs &amp; codes de statut</a> pour la liste complète des réponses.</p>
+
+          <h2>Garder les jetons en sécurité</h2>
+          <p>Quelques habitudes gardent vos jetons hors de portée des mauvaises mains :</p>
+          <ul>
+            <li><strong>Ne commettez jamais de jetons dans le contrôle de version</strong>, et ne les placez jamais dans du code côté client. Les navigateurs et les applications mobiles livrent leur code source aux utilisateurs.</li>
+            <li><strong>Lisez les jetons depuis des variables d'environnement ou un gestionnaire de secrets.</strong> Gardez-les hors des journaux, des captures d'écran et des tickets.</li>
+            <li><strong>Créez un jeton distinct par service</strong> afin de pouvoir en révoquer un sans perturber les autres.</li>
+            <li><strong>Supprimez un jeton dans le tableau de bord pour le révoquer instantanément.</strong> La suppression prend effet immédiatement — la requête suivante utilisant ce jeton reçoit un 401.</li>
+          </ul>
+
+          <h2>Étapes suivantes</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingérer des enregistrements →</p><p class="doc-card-desc">Envoyez des observations dans une source de données.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Créer une prédiction →</p><p class="doc-card-desc">Tirez des futurs échantillonnés d'un profil de données.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Démarrage rapide →</p><p class="doc-card-desc">Passez du jeton à la première prévision.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Sur cette page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

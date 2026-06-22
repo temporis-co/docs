@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>摄取记录 — Temporis 文档</title>
+  <meta name="description" content="使用摄取端点将观测值发送到 Temporis 数据源，包括请求主体、upsert 行为以及错误。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/ingest" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>API 参考</span><span class="sep">/</span><span>摄取记录</span></nav>
+          <h1>摄取记录</h1>
+          <p class="docs-lead">将观测值发送到数据源中。该数据源必须已存在（在仪表板中创建）且未被归档。</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/data_sources/ingest</span></div>
+
+          <h2>请求主体</h2>
+          <p>主体指定目标数据源，并携带一批记录。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_source</span><span class="param-type">string</span><span class="param-req">必填</span></div>
+              <p class="param-desc">要写入的、已存在且未归档的数据源名称。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">records</span><span class="param-type">array</span><span class="param-req">必填</span></div>
+              <p class="param-desc">要存储的记录列表。每条记录是某个序列在某一时刻的单个观测值。</p>
+            </div>
+          </div>
+
+          <h3>记录字段</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">timestamp</span><span class="param-type">integer</span><span class="param-req">必填</span></div>
+              <p class="param-desc">以秒为单位的 Unix 时间。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">name</span><span class="param-type">string</span><span class="param-req">必填</span></div>
+              <p class="param-desc">序列名称。一个数据源可容纳多个命名序列。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">value</span><span class="param-type">number</span><span class="param-req">必填</span></div>
+              <p class="param-desc">观测到的数值（整数或浮点数）。</p>
+            </div>
+          </div>
+
+          <h2>请求示例</h2>
+          <p>下面的示例将四个 <code>orders</code> 观测值写入 <code>store_metrics</code> 数据源，并从环境变量读取令牌：</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718841600, "name": "orders", "value": 42 },
+      { "timestamp": 1718845200, "name": "orders", "value": 51 },
+      { "timestamp": 1718848800, "name": "orders", "value": 47 },
+      { "timestamp": 1718852400, "name": "orders", "value": 63 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718841600, "name": "orders", "value": 42},
+            {"timestamp": 1718845200, "name": "orders", "value": 51},
+            {"timestamp": 1718848800, "name": "orders", "value": 47},
+            {"timestamp": 1718852400, "name": "orders", "value": 63},
+        ],
+    },
+)
+resp.raise_for_status()  # 204 No Content on success</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718841600, name: "orders", value: 42 },
+      { timestamp: 1718845200, name: "orders", value: 51 },
+      { timestamp: 1718848800, name: "orders", value: 47 },
+      { timestamp: 1718852400, name: "orders", value: 63 },
+    ],
+  }),
+});</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_source": "store_metrics",
+		"records": []map[string]any{
+			{"timestamp": 1718841600, "name": "orders", "value": 42},
+			{"timestamp": 1718845200, "name": "orders", "value": 51},
+			{"timestamp": 1718848800, "name": "orders", "value": 47},
+			{"timestamp": 1718852400, "name": "orders", "value": 63},
+		},
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/data_sources/ingest", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close() // 204 No Content on success
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/data_sources/ingest");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_source" =&gt; "store_metrics",
+        "records" =&gt; [
+            ["timestamp" =&gt; 1718841600, "name" =&gt; "orders", "value" =&gt; 42],
+            ["timestamp" =&gt; 1718845200, "name" =&gt; "orders", "value" =&gt; 51],
+            ["timestamp" =&gt; 1718848800, "name" =&gt; "orders", "value" =&gt; 47],
+            ["timestamp" =&gt; 1718852400, "name" =&gt; "orders", "value" =&gt; 63],
+        ],
+    ]),
+]);
+curl_exec($ch);            // 204 No Content on success
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/data_sources/ingest")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_source: "store_metrics",
+  records: [
+    { timestamp: 1718841600, name: "orders", value: 42 },
+    { timestamp: 1718845200, name: "orders", value: 51 },
+    { timestamp: 1718848800, name: "orders", value: 47 },
+    { timestamp: 1718852400, name: "orders", value: 63 },
+  ],
+}.to_json
+
+Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+# =&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/data_sources/ingest"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());  // 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+await client.PostAsync("https://api.temporis.co/v1/data_sources/ingest", content);  // 204 No Content</code></pre></div>
+          </div>
+
+          <h2>响应</h2>
+          <p>成功时，该端点返回 <strong>204 No Content</strong> 且主体为空：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>204 No Content</code></pre></div>
+
+          <h2>Upsert 行为</h2>
+          <p>每条记录以 <code>(timestamp, name)</code> 这对组合作为键。重新发送一条具有相同时间戳和序列名称的记录会覆盖已存储的值。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">重试与回填是幂等的</div><p>由于写入是 upsert，你可以安全地重试失败的请求或重新发送历史数据——重复项会折叠到同一个键上，而不会累积。</p></div>
+          </div>
+
+          <h2>批处理</h2>
+          <p>相比每个请求只发送一条记录，更建议在单个请求中发送多条记录。批处理能大幅减少往返次数和开销。加载历史数据时，请按每块包含多条记录的方式分块发送，而不要一次只流式发送一个数据点。</p>
+
+          <h2>错误</h2>
+          <p>错误会返回 HTTP 状态码以及形如 <code>{ "detail": "..." }</code> 的 JSON 主体。</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>状态</th><th>detail 消息</th><th>含义</th></tr></thead>
+            <tbody>
+              <tr><td>401</td><td>Invalid access token. / Missing access token.</td><td>身份验证失败——请检查你的令牌。</td></tr>
+              <tr><td>404</td><td>Data source not found.</td><td>所指定的数据源不存在。请先在仪表板中创建它。</td></tr>
+              <tr><td>409</td><td>Data source is archived.</td><td>该数据源已归档，无法接受写入。请取消归档，或改用其他数据源。</td></tr>
+            </tbody>
+          </table></div>
+          <p>完整参考请参阅<a href="../api/errors.html">错误与状态码</a>。</p>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">数据源 →</p><p class="doc-card-desc">Temporis 如何存储你的命名序列。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">创建预测 →</p><p class="doc-card-desc">基于你摄取的数据进行预测。</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">准备数据 →</p><p class="doc-card-desc">让你的序列做好良好预测的准备。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustar un perfil de datos — Temporis Docs</title>
+  <meta name="description" content="Elige las opciones de intervalo, parche, histórico y huecos que se ajustan al ritmo de tus datos para obtener pronósticos notablemente mejores.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guías</span><span class="sep">/</span><span>Ajustar un perfil de datos</span></nav>
+          <h1>Ajustar un perfil de datos</h1>
+          <p class="docs-lead">Los valores por defecto funcionan, pero adaptar un perfil al ritmo de tus datos hace que los pronósticos sean notablemente mejores. Así es como elegir cada opción. (Las opciones se definen en <a href="../concepts/data-profiles.html">Perfiles de datos</a>.)</p>
+
+          <h2>Adapta el intervalo a tu cadencia</h2>
+          <p>La opción más importante es <code>interval</code>: el cubo, en segundos, sobre el que se remuestrean tus observaciones. Ajústalo al <strong>periodo de muestreo real</strong> de tus datos. Si registras pedidos una vez por hora, usa <code>3600</code>. Si tienes una cifra al día, usa <code>86400</code>.</p>
+          <p>Equivócate en cualquier dirección y el modelo tendrá dificultades:</p>
+          <ul>
+            <li><strong>Demasiado fino</strong>: un intervalo más corto que tu cadencia real rellena la serie con cubos completados, gastando la ventana de contexto en ruido y espacio vacío en lugar de en señal.</li>
+            <li><strong>Demasiado grueso</strong>: un intervalo más largo que tu cadencia promedia y elimina la estructura real. Un patrón de demanda horario simplemente desaparece si lo agrupas por día.</li>
+          </ul>
+          <p>El perfil <code>hourly_orders</code> usa <code>interval: 3600</code> porque <code>store_metrics</code> registra una cifra de pedidos por hora. Empieza por adaptarte al periodo en que tus datos llegan realmente.</p>
+
+          <h2>Cuánto histórico: num_patches y min_patches</h2>
+          <p>Estas dos opciones controlan el <em>máximo</em> y el <em>mínimo</em> de histórico que interviene en una predicción.</p>
+          <p><code>num_patches</code> es la ventana de contexto: el número máximo de parches de histórico reciente que lee el modelo. Más parches significan más ciclos pasados a la vista, así que más estacionalidad que el modelo puede captar; súbelo cuando quieras que "vea" estructura semanal o anual. Sin embargo, las ganancias se atenúan; pasado un punto estás aportando histórico antiguo que ya no refleja el presente, a cambio de más tokens y sin mejor pronóstico.</p>
+          <p><code>min_patches</code> es el mínimo: el histórico mínimo que un perfil requiere antes de servir en absoluto. Por debajo de él, una llamada de predicción devuelve <strong>409 "Not enough data for this data profile."</strong> Sube <code>min_patches</code> cuando prefieras <em>rechazar</em> un pronóstico de baja confianza antes que devolver uno construido sobre un puñado de puntos: útil para una serie completamente nueva donde una conjetura temprana sería engañosa.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Piénsalo como un rango: <code>min_patches</code> es "ni lo intentes por debajo de esto" y <code>num_patches</code> es "deja de mirar hacia atrás más allá de esto".</p></div>
+          </div>
+
+          <h2>Resolución frente a horizonte: patch_len y patch_spacing</h2>
+          <p>Un parche es el bloque de puntos que el modelo lee y escribe a la vez. <code>patch_len</code> establece cuántos puntos hay en ese bloque. <code>patch_spacing</code> establece el paso entre los puntos que realmente usas: submuestrea la serie y, al hacerlo, estira cuánto alcanza hacia adelante cada paso generado.</p>
+          <p>La relación clave: el <strong>paso de tiempo efectivo</strong> entre puntos de pronóstico es <code>interval * patch_spacing</code> segundos. Con <code>interval: 3600</code> y <code>patch_spacing: 1</code>, cada paso es una hora. Sube <code>patch_spacing</code> a <code>3</code> y cada paso cubre tres horas: el mismo número de puntos generados alcanza ahora tres veces más lejos en el futuro, con una resolución más gruesa.</p>
+          <p>Así que esto es un compromiso entre <strong>detalle y alcance</strong>. Mantén el espaciado ajustado cuando necesites pronósticos a corto plazo de grano fino; ensánchalo cuando te importe un horizonte más largo y puedas aceptar un paso más grueso.</p>
+
+          <h2>Niveles frente a crecimiento: use_diffs</h2>
+          <p><code>use_diffs</code> (la transformación log-diff) le dice al modelo que trabaje sobre el <em>cambio relativo</em> —el crecimiento logarítmico de un punto a otro— en lugar del nivel en bruto.</p>
+          <ul>
+            <li><strong>Actívalo</strong> para series que crecen o se componen de forma multiplicativa: ingresos, precios, recuentos de usuarios, cualquier cosa con tendencia o que "se duplica" en lugar de "sumar". Modelar el crecimiento evita que una serie en ascenso quede anclada a donde solía estar.</li>
+            <li><strong>Déjalo desactivado</strong> para niveles acotados o estacionarios que oscilan en un rango fijo: porcentaje de utilización, temperatura, una tasa de saturación. Estos tienen un nivel natural al que regresar, y diferenciarlos solo añade ruido.</li>
+          </ul>
+          <p>Una prueba rápida: si duplicar las unidades de tu serie debería duplicar sus saltos típicos, es multiplicativa; activa <code>use_diffs</code>.</p>
+
+          <h2>Enmascarar tiempo muerto: ventanas de exclusión</h2>
+          <p>Algunas series tienen tramos recurrentes en los que no pasa nada por diseño: un mercado que cierra de noche, una tienda fuera del horario comercial. Si dejas ese tiempo muerto, el modelo trata esos tramos planos o en cero como señal real y aprende un patrón que no existe.</p>
+          <p>Un <code>exclude_window</code> (una zona horaria más una hora de inicio y de fin del día) enmascara ese rango recurrente para que se descarte de la serie que lee el modelo. Configura uno para las horas en que tu serie está estructuralmente inactiva —por ejemplo, enmascarar la noche en un perfil que lee precios de mercado— para que el comportamiento en horario de apertura se mantenga limpio.</p>
+
+          <h2>Tolerar huecos: fill_limit</h2>
+          <p><code>fill_limit</code> es la racha más larga de cubos faltantes consecutivos que Temporis rellenará hacia adelante. Un hueco más corto que el límite se salva arrastrando el último valor hacia adelante; un hueco más largo que el límite se deja como un agujero, y esas filas se descartan.</p>
+          <ul>
+            <li><strong>Súbelo</strong> para salvar interrupciones más largas: un sensor que ocasionalmente se desconecta un tiempo, donde arrastrar la última lectura hacia adelante es razonable.</li>
+            <li><strong>Bájalo</strong> cuando prefieras no inventar datos a través de grandes agujeros: cuando un hueco largo significa de verdad "desconocido" y una línea plana arrastrada hacia adelante sería engañosa.</li>
+          </ul>
+
+          <h2>Resolución de problemas</h2>
+          <div class="table-wrap"><table><thead><tr><th>Síntoma</th><th>Causa probable</th><th>Prueba</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>Demasiados pocos puntos, o <code>min_patches</code> demasiado alto</td><td>Ingiere más histórico, o baja <code>min_patches</code></td></tr>
+            <tr><td>Los pronósticos ignoran el patrón diario</td><td><code>interval</code> demasiado grueso, o contexto demasiado corto</td><td>Adapta <code>interval</code> a tu cadencia; sube <code>num_patches</code></td></tr>
+            <tr><td>Los pronósticos se exceden en una serie con tendencia</td><td>Se modelan niveles en bruto en lugar de crecimiento</td><td>Activa <code>use_diffs</code></td></tr>
+            <tr><td>Valores extraños en un periodo cerrado conocido</td><td>Tiempo muerto incluido en la serie</td><td>Configura un <code>exclude_window</code> para ese rango</td></tr>
+            <tr><td>Filas descartadas / la serie parece escasa</td><td>Los huecos superan <code>fill_limit</code></td><td>Sube <code>fill_limit</code>, o densifica los datos que envías</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Cambia una opción a la vez y compara los pronósticos. El ajuste es más fácil de razonar cuando cada cambio tiene un efecto visible y aislado.</p></div>
+          </div>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfiles de datos →</p><p class="doc-card-desc">La definición completa de cada opción de esta guía.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Trabajar con muestras →</p><p class="doc-card-desc">Convierte trayectorias muestreadas en pronósticos puntuales y bandas.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predicciones →</p><p class="doc-card-desc">Cómo el muestreo produce un pronóstico probabilístico.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">En esta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

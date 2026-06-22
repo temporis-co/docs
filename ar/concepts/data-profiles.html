@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ملفات البيانات — توثيق Temporis</title>
+  <meta name="description" content="ملف البيانات هو الوصفة التي تخبر Temporis بكيفية قراءة مصدر بيانات: أي السلاسل، وبأي وتيرة، وبأي قدر من التاريخ، وكيفية تنظيفه.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>المفاهيم</span><span class="sep">/</span><span>ملفات البيانات</span></nav>
+          <h1>ملفات البيانات</h1>
+          <p class="docs-lead">ملف البيانات هو الوصفة التي تخبر Temporis بكيفية قراءة مصدر بيانات: أي السلاسل، وبأي وتيرة، وبأي قدر من التاريخ، وكيفية تنظيفه. وهو الشيء الذي تتنبأ مقابله.</p>
+
+          <h2>ما الذي يحدّده الملف</h2>
+          <p>يحتفظ <a href="data-sources.html">مصدر البيانات</a> بصفوف خام. ويحوّل الملف تلك الصفوف إلى إشارة نظيفة منتظمة المباعدة يستطيع النموذج قراءتها — منتقياً السلاسل، ومحاذياً الأرصاد على شبكة زمنية، ومقرّراً مقدار التاريخ المستخدم، ومرتّباً الفجوات. وعندما تستدعي <a href="../api/predict.html">predict</a>، فإنك تسمّي ملفاً، لا مصدراً.</p>
+
+          <p>تنشئ الملفات وتحرّرها في لوحة التحكم. المثال هنا هو <code>hourly_orders</code>: فهو يقرأ سلسلة <code>orders</code> من <code>store_metrics</code> على شبكة من ساعة واحدة (<code>interval</code> 3600).</p>
+
+          <h2>اختيار البيانات</h2>
+          <h3>المصدر والسلسلة</h3>
+          <p>يختار إعدادان ما يقرؤه الملف:</p>
+          <ul>
+            <li><code>data_source</code> — أي مصدر بيانات يُقرأ منه.</li>
+            <li><code>names</code> — اسم سلسلة واحد أو أكثر داخل ذلك المصدر.</li>
+          </ul>
+          <p>إدراج اسم واحد يعطي تنبؤاً أحادي المتغيّر. وإدراج عدّة أسماء — لنقل <code>orders</code> و<code>visitors</code> — يجعل الملف <strong>متعدّد المتغيّرات</strong>: تُتنبّأ السلاسل مجتمعةً، فيستطيع النموذج استخدام العلاقة بينها.</p>
+
+          <h2>الشبكة الزمنية</h2>
+          <p>نادراً ما تصل الأرصاد الحقيقية بوتيرة متساوية تماماً، لذا يعيد الملف معاينتها على شبكة منتظمة.</p>
+
+          <p><code>interval</code> هو حجم كل سلّة في الشبكة بالثواني. فمع <code>interval</code> 3600، تُحاذى الأرصاد في سلال بالساعة. وتُثبَّت الشبكة على رصدك <strong>الأحدث</strong> وتتقدم رجوعاً منه، بحيث تقع أحدث البيانات دائماً على الشبكة بدقة.</p>
+
+          <p>لا يقرأ النموذج كل نقطة على حدة. بل يعمل بالـ<em>رقع</em> — قطع ثابتة الحجم من السلسلة:</p>
+          <ul>
+            <li><code>patch_len</code> — كم نقطة تُكوّن رقعة واحدة.</li>
+            <li><code>patch_spacing</code> — الخطوة بين النقاط التي يستخدمها، وهي صورة من خفض المعاينة.</li>
+            <li><code>num_patches</code> — أقصى عدد من رقع التاريخ سيستخدمه كسياق.</li>
+            <li><code>min_patches</code> — أقل عدد من رقع التاريخ المطلوب لتقديم تنبؤ.</li>
+          </ul>
+
+          <p>حدسياً: السياق الذي يراه النموذج هو تقريباً <code>num_patches</code> رقعة من التاريخ الحديث. وإذا توافر للملف أقل من <code>min_patches</code> رقعة، فلا يستطيع التقديم وتحصل على <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>تحدّد المباعدة أيضاً دقة تنبؤك. فالخطوة الفعلية بين نقاط التنبؤ هي <code>interval × patch_spacing</code> ثانية. ومع <code>interval</code> 3600 و<code>patch_spacing</code> 1، تقع التنبؤات على مسافة ساعة واحدة بعضها عن بعض.</p>
+
+          <h2>تنظيف السلسلة</h2>
+          <p>بعد إعادة المعاينة، قد تكون بعض السلال بلا رصد. ويقرّر إعدادان كيفية معالجة ذلك:</p>
+          <ul>
+            <li><code>fill_limit</code> — أطول سلسلة متتالية من السلال الفارغة التي ستُملأ أماماً (بحمل آخر قيمة معروفة إلى الأمام). وتُعامَل الفجوة الأطول من ذلك بوصفها مفقودة فعلاً وتُسقَط تلك الصفوف بدلاً من ملئها.</li>
+            <li><code>exclude_window</code> — نافذة وقت من اليوم متكرّرة لإخفائها، تُعطى كمنطقة زمنية مع بداية ونهاية. استخدمها للوقت الميت الذي تتوقعه، مثل ساعات الليل حين تكون السوق مغلقة، حتى لا تشوّه تلك الفترة الهادئة السلسلة.</li>
+          </ul>
+
+          <h2>المستويات مقابل النمو</h2>
+          <p>بعض السلاسل تُنمذَج على أفضل وجه بـ<em>مستواها</em>؛ وأخرى بـ<em>تغيّرها النسبي</em>. ويحوّل الإعداد <code>use_diffs</code> (تحويل فرق-اللوغاريتم) النموذج للعمل على النمو اللوغاريتمي — التغيّر التناسبي من خطوة إلى التالية — بدلاً من القيمة الخام.</p>
+
+          <p>فعّله للسلاسل التي تتحرك حركةً ضربية أو تتجه بقوة عبر نطاق واسع: الإيرادات، والأسعار، وكل ما تكون فيه حركة بنسبة 10% أهمّ من حركة مطلقة. وأبقِه مطفأً للسلاسل التي تستقر في نطاق محدود مستقر تقريباً، حيث يكون المستوى الخام أصلاً هو الشيء الطبيعي للتنبؤ به.</p>
+
+          <h2>الجاهزية</h2>
+          <p>الملف ليس قابلاً للاستخدام لحظة إنشائه. فيحسب Temporis أولاً إحصاءات التطبيع — متعلّماً التوزع النموذجي لبياناتك كي يستطيع تحجيم القيم إلى النطاق الذي يتوقعه النموذج. وحتى يملك بيانات كافية لفعل ذلك، لا يكون الملف جاهزاً، وتعرض لوحة التحكم حالة جاهزيته.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>التنبؤ مقابل ملف ليس جاهزاً يُعيد <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> انتظر حتى تبلّغ لوحة التحكم بأن الملف جاهز، ثم استدعِ predict.</p></div>
+          </div>
+
+          <h2>مرجع الإعدادات</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>الإعداد</th><th>ما الذي يتحكم فيه</th><th>مثال</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>أي مصدر بيانات يقرؤه الملف.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>السلاسل المراد قراءتها؛ عدّة أسماء تُتنبّأ مجتمعةً (متعدّد المتغيّرات).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>سلّة إعادة المعاينة بالثواني؛ الشبكة مُثبَّتة على أحدث رصد.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>عدد النقاط في رقعة واحدة — القطعة التي يقرؤها النموذج ويكتبها في المرة الواحدة.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>الخطوة بين النقاط المستخدمة؛ خطوة التنبؤ هي <code>interval × patch_spacing</code> ثانية.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>أقصى عدد من رقع التاريخ المستخدمة كسياق.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>أدنى عدد من الرقع المطلوب للتقديم؛ دون ذلك، 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>أطول سلسلة من السلال الفارغة للملء أماماً؛ الفجوات الأطول تُسقِط صفوفاً.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>نمذجة التغيّر النسبي (النمو اللوغاريتمي) بدلاً من المستوى الخام.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>نافذة وقت من اليوم متكرّرة لإخفائها (منطقة زمنية + بداية + نهاية).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>لست متأكداً من القيم التي تختارها؟ يشرح <a href="../guides/tuning-profile.html">ضبط الملف</a> كيفية انتقاء <code>interval</code> وطول التاريخ وإعدادات التنظيف لبياناتك.</p></div>
+          </div>
+
+          <h2>الخطوات التالية</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">ضبط الملف →</p><p class="doc-card-desc">كيفية اختيار قيم جيّدة لكل إعداد.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">التنبؤات →</p><p class="doc-card-desc">ما الذي تحصل عليه عند التنبؤ مقابل ملف.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">واجهة Predict البرمجية →</p><p class="doc-card-desc">المرجع الكامل لنقطة نهاية predict.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

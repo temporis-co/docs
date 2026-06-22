@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Errors &amp; status codes — Temporis Docs</title>
+  <meta name="description" content="Temporis सफलता और विफलता की रिपोर्ट कैसे करता है, प्रत्येक HTTP status का क्या अर्थ है, और अपने code में इन्हें कैसे संभालें।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/errors" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>API रेफरेंस</span><span class="sep">/</span><span>Errors &amp; status codes</span></nav>
+          <h1>Errors &amp; status codes</h1>
+          <p class="docs-lead">Temporis सफलता और विफलता की रिपोर्ट कैसे करता है, प्रत्येक status का क्या अर्थ है, और इन्हें कैसे संभालें।</p>
+
+          <h2>Response आकार</h2>
+          <p>किसी response का आकार इस पर निर्भर करता है कि क्या हुआ:</p>
+          <ul>
+            <li>एक सफल <a href="../api/ingest.html">ingest</a> बिना किसी body के <strong>204 No Content</strong> लौटाता है।</li>
+            <li>एक सफल <a href="../api/predict.html">prediction</a> एक JSON body के साथ <strong>200</strong> लौटाता है।</li>
+            <li>कोई भी error संबंधित HTTP status को <code>{ "detail": "..." }</code> रूप की एक JSON body के साथ लौटाता है।</li>
+          </ul>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Data profile not found." }</code></pre></div>
+
+          <h2>Status codes</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Status</th><th>अर्थ</th><th>कहां</th></tr></thead>
+            <tbody>
+              <tr><td>200 OK</td><td>Prediction सफल; body में samples हैं।</td><td>predict</td></tr>
+              <tr><td>204 No Content</td><td>Ingest सफल; कोई body नहीं।</td><td>ingest</td></tr>
+              <tr><td>400 Bad Request</td><td>Invalid prediction parameters।</td><td>predict</td></tr>
+              <tr><td>401 Unauthorized</td><td>गायब या अमान्य access token।</td><td>सभी requests</td></tr>
+              <tr><td>402 Payment Required</td><td>फ़ाइल पर कोई card नहीं, या एक payment समस्या।</td><td>predict</td></tr>
+              <tr><td>404 Not Found</td><td>Data source not found (ingest); data profile not found या serve के लिए तैयार नहीं (predict)।</td><td>ingest, predict</td></tr>
+              <tr><td>409 Conflict</td><td>Data source archived (ingest); पर्याप्त data नहीं (predict)।</td><td>ingest, predict</td></tr>
+              <tr><td>502 Bad Gateway</td><td>Prediction विफल — एक क्षणिक server-side error।</td><td>predict</td></tr>
+            </tbody>
+          </table></div>
+
+          <h2>Errors को संभालना</h2>
+          <p>अधिकांश विफलताएं एक स्पष्ट अगली कार्रवाई से मेल खाती हैं:</p>
+          <ul>
+            <li><strong>401</strong> — जांचें कि <code>Authorization</code> header मौजूद है और token वैध है। <a href="../api/authentication.html">Authentication</a> देखें।</li>
+            <li><strong>402</strong> — dashboard में Billing के अंतर्गत credit card जोड़ें या ठीक करें, फिर दोबारा प्रयास करें।</li>
+            <li><strong>404</strong> — सुनिश्चित करें कि data source या data profile मौजूद है, और profile serve के लिए तैयार है।</li>
+            <li><strong>predict पर 409</strong> — तब तक और history ingest करें जब तक profile अपने न्यूनतम तक न पहुंचे, फिर दोबारा प्रयास करें।</li>
+            <li><strong>ingest पर 409</strong> — data source archived है; इसे unarchive करें या किसी अन्य source में लिखें।</li>
+            <li><strong>502</strong> — क्षणिक। exponential backoff के साथ दोबारा प्रयास करें।</li>
+          </ul>
+
+          <p>status code पर एक सरल branch इन सभी को कवर कर लेता है:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import time, requests
+
+def predict(payload, token, retries=3):
+    for attempt in range(retries):
+        resp = requests.post(
+            "https://api.temporis.co/v1/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 502:
+            time.sleep(2 ** attempt)   # transient: back off and retry
+            continue
+        detail = resp.json().get("detail", "")
+        if resp.status_code == 402:
+            raise RuntimeError(f"Billing: {detail} — add a card in the dashboard.")
+        if resp.status_code == 409:
+            raise RuntimeError(f"Not ready: {detail} — ingest more history.")
+        resp.raise_for_status()        # 400 / 401 / 404: fix the request
+    raise RuntimeError("Prediction failed after retries.")</code></pre></div>
+
+          <h2>Retries</h2>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">सही चीज़ों को retry करें</div><p>502 को retry करना सुरक्षित है — यह क्षणिक है। Ingest idempotent है (writes <code>(timestamp, name)</code> key पर upsert होते हैं), इसलिए किसी विफल ingest को retry करना हमेशा सुरक्षित है। 4xx responses को आंख मूंदकर retry करने से बचें; पहले request को ठीक करें।</p></div>
+          </div>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">prediction बनाएं →</p><p class="doc-card-desc">predict endpoint के लिए request और response।</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">रिकॉर्ड इन्जेस्ट करें →</p><p class="doc-card-desc">किसी data source में observations लिखें।</p></a>
+            <a class="doc-card" href="../api/authentication.html"><p class="doc-card-title">Authentication →</p><p class="doc-card-desc">bearer tokens बनाएं और भेजें।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

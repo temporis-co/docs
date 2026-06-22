@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustando um perfil de dados — Temporis Docs</title>
+  <meta name="description" content="Escolha configurações de intervalo, patch, histórico e lacunas que combinem com o ritmo dos seus dados para previsões visivelmente melhores.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Guias</span><span class="sep">/</span><span>Ajustando um perfil de dados</span></nav>
+          <h1>Ajustando um perfil de dados</h1>
+          <p class="docs-lead">Os padrões funcionam, mas combinar um perfil com o ritmo dos seus dados torna as previsões visivelmente melhores. Veja como escolher cada configuração. (As configurações são definidas em <a href="../concepts/data-profiles.html">Perfis de dados</a>.)</p>
+
+          <h2>Combine o intervalo com a sua cadência</h2>
+          <p>A configuração mais importante de todas é o <code>interval</code> — o balde, em segundos, no qual suas observações são reamostradas. Defina-o como o <strong>período de amostragem real</strong> dos seus dados. Se você registra pedidos uma vez por hora, use <code>3600</code>. Se você tem um número por dia, use <code>86400</code>.</p>
+          <p>Erre isso em qualquer direção e o modelo terá dificuldade:</p>
+          <ul>
+            <li><strong>Fino demais</strong> — um intervalo mais curto do que sua cadência real enche a série de baldes preenchidos, gastando a janela de contexto com ruído e espaço vazio em vez de sinal.</li>
+            <li><strong>Grosseiro demais</strong> — um intervalo mais longo do que sua cadência elimina a estrutura real por média. Um padrão de demanda horário simplesmente desaparece se você agrupá-lo por dia.</li>
+          </ul>
+          <p>O perfil <code>hourly_orders</code> usa <code>interval: 3600</code> porque <code>store_metrics</code> registra um número de pedidos por hora. Comece combinando o período em que seus dados realmente chegam.</p>
+
+          <h2>Quanto histórico: num_patches e min_patches</h2>
+          <p>Essas duas configurações controlam o <em>máximo</em> e o <em>mínimo</em> de histórico envolvido em uma previsão.</p>
+          <p><code>num_patches</code> é a janela de contexto: o número máximo de patches de histórico recente que o modelo lê. Mais patches significam mais ciclos passados em vista, então mais sazonalidade que o modelo pode captar — aumente-o quando quiser que ele "enxergue" estrutura semanal ou anual. Os ganhos diminuem, porém; passado certo ponto, você está alimentando histórico antigo que já não reflete o presente, por mais tokens e sem previsão melhor.</p>
+          <p><code>min_patches</code> é o piso: o histórico mínimo que um perfil exige antes de servir qualquer coisa. Abaixo dele, uma chamada de previsão retorna <strong>409 "Not enough data for this data profile."</strong> Aumente o <code>min_patches</code> quando preferir <em>recusar</em> uma previsão de baixa confiança em vez de retornar uma construída sobre um punhado de pontos — útil para uma série novinha em folha onde um palpite precoce seria enganoso.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Pense nisso como uma faixa: <code>min_patches</code> é "nem tente abaixo disso" e <code>num_patches</code> é "pare de olhar para trás além disso".</p></div>
+          </div>
+
+          <h2>Resolução vs. horizonte: patch_len e patch_spacing</h2>
+          <p>Um patch é o bloco de pontos que o modelo lê e escreve por vez. <code>patch_len</code> define quantos pontos há nesse bloco. <code>patch_spacing</code> define o passo entre os pontos que você realmente usa — ele subamostra a série e, ao fazê-lo, estica o quão longe cada passo gerado alcança.</p>
+          <p>A relação chave: o <strong>passo de tempo efetivo</strong> entre os pontos da previsão é <code>interval * patch_spacing</code> segundos. Com <code>interval: 3600</code> e <code>patch_spacing: 1</code>, cada passo é uma hora. Aumente <code>patch_spacing</code> para <code>3</code> e cada passo cobre três horas — o mesmo número de pontos gerados agora alcança três vezes mais longe no futuro, em resolução mais grosseira.</p>
+          <p>Então este é um equilíbrio entre <strong>detalhe e alcance</strong>. Mantenha o espaçamento apertado quando precisar de previsões de curto prazo de granularidade fina; alargue-o quando se importar com um horizonte mais longo e puder aceitar um passo mais grosseiro.</p>
+
+          <h2>Níveis vs. crescimento: use_diffs</h2>
+          <p><code>use_diffs</code> (a transformação log-diff) diz ao modelo para trabalhar com a <em>variação relativa</em> — crescimento logarítmico de ponto a ponto — em vez do nível bruto.</p>
+          <ul>
+            <li><strong>Ative</strong> para séries que crescem ou se compõem multiplicativamente: receita, preços, contagens de usuários, qualquer coisa com tendência ou que "dobra" em vez de "somar". Modelar o crescimento impede que uma série em ascensão fique ancorada onde costumava estar.</li>
+            <li><strong>Deixe desativado</strong> para níveis limitados ou estacionários que pairam em uma faixa fixa: porcentagem de utilização, temperatura, uma taxa de saturação. Esses têm um nível natural ao qual retornar, e diferenciá-los só adiciona ruído.</li>
+          </ul>
+          <p>Um teste rápido: se dobrar as unidades da sua série deveria dobrar seus saltos típicos, ela é multiplicativa — ative o <code>use_diffs</code>.</p>
+
+          <h2>Mascarando o tempo morto: janelas de exclusão</h2>
+          <p>Algumas séries têm trechos recorrentes em que nada acontece por design — um mercado que fecha durante a noite, uma loja fora do horário comercial. Se você deixar esse tempo morto, o modelo trata esses trechos planos ou zerados como sinal real e aprende um padrão que não existe.</p>
+          <p>Um <code>exclude_window</code> (um fuso horário mais um horário do dia de início e de fim) mascara essa faixa recorrente para que ela seja descartada da série que o modelo lê. Defina um para as horas em que sua série fica estruturalmente ociosa — digamos, mascarando a madrugada em um perfil que lê preços de mercado — para que o comportamento do horário de funcionamento permaneça limpo.</p>
+
+          <h2>Tolerando lacunas: fill_limit</h2>
+          <p><code>fill_limit</code> é a sequência mais longa de baldes ausentes consecutivos que o Temporis preencherá para frente. Uma lacuna mais curta que o limite é preenchida levando o último valor adiante; uma lacuna mais longa que o limite é deixada como um buraco, e essas linhas são descartadas.</p>
+          <ul>
+            <li><strong>Aumente-o</strong> para preencher interrupções mais longas — um sensor que ocasionalmente fica offline por um tempo, onde levar a última leitura adiante é razoável.</li>
+            <li><strong>Diminua-o</strong> quando preferir não inventar dados ao longo de grandes buracos — quando uma lacuna longa genuinamente significa "desconhecido" e uma linha plana levada adiante seria enganosa.</li>
+          </ul>
+
+          <h2>Solução de problemas</h2>
+          <div class="table-wrap"><table><thead><tr><th>Sintoma</th><th>Causa provável</th><th>Tente</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>Pontos de menos, ou <code>min_patches</code> definido alto demais</td><td>Ingira mais histórico, ou diminua o <code>min_patches</code></td></tr>
+            <tr><td>As previsões ignoram o padrão diário</td><td><code>interval</code> grosseiro demais, ou contexto curto demais</td><td>Combine o <code>interval</code> com a sua cadência; aumente o <code>num_patches</code></td></tr>
+            <tr><td>As previsões disparam em uma série com tendência</td><td>Modelando níveis brutos em vez de crescimento</td><td>Ative o <code>use_diffs</code></td></tr>
+            <tr><td>Valores estranhos em um período conhecidamente fechado</td><td>Tempo morto incluído na série</td><td>Defina um <code>exclude_window</code> para essa faixa</td></tr>
+            <tr><td>Linhas descartadas / série parece esparsa</td><td>Lacunas excedem o <code>fill_limit</code></td><td>Aumente o <code>fill_limit</code>, ou adense os dados que você envia</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Mude uma configuração por vez e compare as previsões. O ajuste é mais fácil de raciocinar quando cada alteração tem um efeito visível e isolado.</p></div>
+          </div>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfis de dados →</p><p class="doc-card-desc">A definição completa de cada configuração deste guia.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Trabalhando com amostras →</p><p class="doc-card-desc">Transforme trajetórias amostradas em previsões pontuais e faixas.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Previsões →</p><p class="doc-card-desc">Como a amostragem produz uma previsão probabilística.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

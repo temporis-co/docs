@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wie Forecasting funktioniert — Temporis Docs</title>
+  <meta name="description" content="Temporis erstellt Prognosen, indem es Ihre Zeitreihe als Sequenz liest und fortsetzt — so wie ein Sprachmodell Text fortsetzt. Hier bauen Sie das mentale Modell dafür auf.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Konzepte</span><span class="sep">/</span><span>Wie Forecasting funktioniert</span></nav>
+          <h1>Wie Forecasting funktioniert</h1>
+          <p class="docs-lead">Temporis erstellt Prognosen, indem es Ihre Zeitreihe als Sequenz behandelt, die ein großes Modell liest und fortsetzt — so wie ein Sprachmodell Text fortsetzt. Diese Seite baut dieses mentale Modell auf, bevor Sie die API anfassen.</p>
+
+          <h2>Forecasting ist Sequenzvorhersage</h2>
+          <p>Ein Sprachmodell liest einen Textabschnitt und sagt voraus, was als Nächstes kommt. Temporis macht dasselbe mit Zahlen. Es liest die jüngste Historie Ihrer Reihe und setzt sie fort, Schritt für Schritt.</p>
+          <p>Das Modell hat bereits eine enorme Vielfalt an Zeitreihen gesehen — Nachfrage, die am Wochenende ansteigt, Preise, die driften, Energielast, die sich täglich zyklisch verhält. Aus all dem hat es gelernt, was üblicherweise als Nächstes kommt, gegeben das, was zuvor kam. Forecasting wird so zu einer einzigen, allgemeinen Frage: Was ist, gegeben diese Historie, eine plausible Fortsetzung?</p>
+          <p>Das ist eine andere Arbeitsweise als klassisches Forecasting. Normalerweise würden Sie eine Modellfamilie auswählen und dann deren Parameter Reihe für Reihe anpassen — Trend- und Saisonterme auswählen, sie justieren und jedes Mal neu anpassen, wenn sich die Daten verschieben. Temporis überspringt den Modellaufbau pro Reihe. Sie übergeben ihm die Historie, und es setzt die Sequenz direkt fort, indem es auf Muster zurückgreift, die es über viele Reihen hinweg gelernt hat.</p>
+
+          <h2>Von Zahlen zu Tokens</h2>
+          <p>Bevor das Modell Ihre Reihe lesen kann, werden die Rohwerte in eine Sequenz diskreter Tokens umgewandelt — und die Ausgabe des Modells wird wieder in Zahlen zurückverwandelt. Die Pipeline läuft in mehreren Stufen ab:</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">Resampling</div><div class="kv-val">Die Reihe wird bereinigt und auf ein regelmäßiges Zeitraster gelegt, sodass der Abstand zwischen den Punkten einheitlich ist.</div></div>
+            <div class="kv-row"><div class="kv-key">Normalisieren</div><div class="kv-val">Die Werte werden in einen gemeinsamen Bereich skaliert, der aus der typischen Streuung Ihrer Daten gelernt wurde (ungefähr ihr 1.-bis-99.-Perzentil-Band), damit unterschiedliche Reihen für das Modell vergleichbar aussehen.</div></div>
+            <div class="kv-row"><div class="kv-key">Patchen &amp; komprimieren</div><div class="kv-val">Das Raster wird in Patches zerlegt und jeder Patch mit einer Frequenztransformation komprimiert. Ein Patch ist die Einheit, die das Modell jeweils liest und schreibt.</div></div>
+            <div class="kv-row"><div class="kv-key">Quantisieren</div><div class="kv-val">Die komprimierten Patches werden auf ein Vokabular diskreter Tokens abgebildet — das Alphabet, das das Modell tatsächlich sieht.</div></div>
+            <div class="kv-row"><div class="kv-key">Fortsetzen</div><div class="kv-val">Das Modell liest die Token-Sequenz und erzeugt eine Fortsetzung, genau wie ein Sprachmodell Text fortsetzt.</div></div>
+            <div class="kv-row"><div class="kv-key">Dekodieren</div><div class="kv-val">Die erzeugten Tokens werden wieder in Zahlen umgewandelt, wobei die Normalisierung rückgängig gemacht wird, sodass die Prognose auf der realen Skala Ihrer Daten landet.</div></div>
+          </div>
+          <p>Patches sind hier die zentrale Idee: Sie legen die Lese- und Schreibeinheit des Modells fest. Das Modell bewegt sich nicht jeweils um eine einzelne Roh-Beobachtung weiter — es bewegt sich jeweils um einen Patch weiter, weshalb die Prognose in Schritten statt in Einzelpunkten voranschreitet.</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Sie steuern diese Kodierung</div><p>Die Einstellungen eines <a href="../concepts/data-profiles.html">Datenprofils</a> — sein <code>interval</code>, <code>patch_len</code> und <code>patch_spacing</code> — bestimmen, wie Ihre Rohdaten resampelt und in die obigen Patches zerlegt werden. Über das Justieren des Profils passen Sie die Kodierung für Ihre Reihe an.</p></div>
+          </div>
+
+          <h2>Warum eine Verteilung und nicht eine einzelne Zahl</h2>
+          <p>Generierung ist Sampling. Jedes Mal, wenn das Modell die Sequenz fortsetzt, zieht es Tokens, anstatt sich auf eine feste Antwort festzulegen, sodass zwei Durchläufe auf derselben Historie zwei verschiedene Zukünfte hervorbringen können. Das ist ein Feature, kein Rauschen.</p>
+          <p>Eine einzelne Prognoseanfrage fordert mehrere Fortsetzungen auf einmal an. Der Parameter <code>count</code> legt fest, wie viele unabhängige Trajektorien gezogen werden; jede ist ein vollständiger, in sich konsistenter Pfad in die Zukunft. Zusammen bilden sie eine probabilistische Prognose: eine Wolke plausibler Ergebnisse statt einer einzigen Linie.</p>
+          <p>Zwei Stellschrauben formen, wie diese Ziehungen gesamplet werden. <code>temperature</code> legt fest, wie abenteuerlustig jeder Schritt ist — höhere Werte spreizen die Samples auseinander, niedrigere halten sie nahe am wahrscheinlichsten Pfad des Modells. <code>top_p</code> beschneidet den unwahrscheinlichen Rand vor dem Sampling. Jede zurückgegebene Trajektorie trägt außerdem einen <code>loss</code>, der bewertet, wie typisch das Modell sie fand, sodass Sie einen repräsentativen Pfad auswählen oder das Set gewichten können.</p>
+          <p>Der praktische Wert liegt in der Streuung. Statt einer einzigen Schätzung, die mit ziemlicher Sicherheit leicht daneben liegt, sehen Sie die Bandbreite an Zukünften, die das Modell für plausibel hält — genug, um Best Case, Worst Case und die tatsächliche Breite der Unsicherheit abzulesen.</p>
+          <p>Siehe <a href="../concepts/predictions.html">Prognosen &amp; Sampling</a> dazu, wie Sie die Antwort lesen, und <a href="../guides/prediction-samples.html">Arbeiten mit Prognose-Samples</a> dazu, wie Sie aus einem Set von Trajektorien Intervalle gewinnen.</p>
+
+          <h2>Wo Datenprofile ins Spiel kommen</h2>
+          <p>Ein Datenprofil ist das gespeicherte Rezept, das Ihre Rohdaten an die obige Kodierung bindet. Es verweist auf eine Datenquelle, benennt die zu lesenden Reihen und legt die Stellschrauben fest, die Resampling und Patching steuern — sodass jede Prognose gegen dieses Profil Ihre Daten auf dieselbe Weise liest.</p>
+          <p>Die wichtigsten Stellschrauben sind <code>interval</code> (der Resampling-Bucket in Sekunden), <code>patch_len</code> und <code>patch_spacing</code> (Größe und Schrittweite jedes Patches), <code>num_patches</code> (wie viel Historie als Kontext gelesen wird) sowie Transformationen wie <code>use_diffs</code> für Reihen, die multiplikativ wachsen. Die vollständige Liste samt Hinweisen zur Auswahl der einzelnen Werte finden Sie unter <a href="../concepts/data-profiles.html">Datenprofile</a>.</p>
+
+          <h2>Nächste Schritte</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Datenprofile →</p><p class="doc-card-desc">Das Rezept, das Rohdaten an die Kodierung bindet — und jede Stellschraube, die Sie justieren können.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prognosen &amp; Sampling →</p><p class="doc-card-desc">Die Antwort lesen und sie mit count, temperature und top_p formen.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Schnellstart →</p><p class="doc-card-desc">Daten einspielen und Ihre erste Prognose von Anfang bis Ende durchlaufen.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

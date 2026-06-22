@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>रिकॉर्ड इन्जेस्ट करें — Temporis Docs</title>
+  <meta name="description" content="ingest endpoint के साथ Temporis data source में observations भेजें, जिसमें request body, upsert व्यवहार और errors शामिल हैं।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/ingest" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>API रेफरेंस</span><span class="sep">/</span><span>रिकॉर्ड इन्जेस्ट करें</span></nav>
+          <h1>रिकॉर्ड इन्जेस्ट करें</h1>
+          <p class="docs-lead">किसी data source में observations भेजें। data source पहले से मौजूद होना चाहिए (इसे dashboard में बनाएं) और archived नहीं होना चाहिए।</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/data_sources/ingest</span></div>
+
+          <h2>Request body</h2>
+          <p>Body लक्षित data source का नाम देती है और records का एक batch ले जाती है।</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_source</span><span class="param-type">string</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">किसी मौजूदा, गैर-archived data source का नाम जिसमें लिखना है।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">records</span><span class="param-type">array</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">store करने के लिए records की सूची। प्रत्येक record एक समय पर एक series का एकल observation है।</p>
+            </div>
+          </div>
+
+          <h3>Record fields</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">timestamp</span><span class="param-type">integer</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">Unix समय, सेकंड में।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">name</span><span class="param-type">string</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">series का नाम। एक data source कई named series रखता है।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">value</span><span class="param-type">number</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">observed मान (integer या float)।</p>
+            </div>
+          </div>
+
+          <h2>उदाहरण request</h2>
+          <p>यह चार <code>orders</code> observations को <code>store_metrics</code> data source में लिखता है, और token को environment से पढ़ता है:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718841600, "name": "orders", "value": 42 },
+      { "timestamp": 1718845200, "name": "orders", "value": 51 },
+      { "timestamp": 1718848800, "name": "orders", "value": 47 },
+      { "timestamp": 1718852400, "name": "orders", "value": 63 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718841600, "name": "orders", "value": 42},
+            {"timestamp": 1718845200, "name": "orders", "value": 51},
+            {"timestamp": 1718848800, "name": "orders", "value": 47},
+            {"timestamp": 1718852400, "name": "orders", "value": 63},
+        ],
+    },
+)
+resp.raise_for_status()  # 204 No Content on success</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718841600, name: "orders", value: 42 },
+      { timestamp: 1718845200, name: "orders", value: 51 },
+      { timestamp: 1718848800, name: "orders", value: 47 },
+      { timestamp: 1718852400, name: "orders", value: 63 },
+    ],
+  }),
+});</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_source": "store_metrics",
+		"records": []map[string]any{
+			{"timestamp": 1718841600, "name": "orders", "value": 42},
+			{"timestamp": 1718845200, "name": "orders", "value": 51},
+			{"timestamp": 1718848800, "name": "orders", "value": 47},
+			{"timestamp": 1718852400, "name": "orders", "value": 63},
+		},
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/data_sources/ingest", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close() // 204 No Content on success
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/data_sources/ingest");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_source" =&gt; "store_metrics",
+        "records" =&gt; [
+            ["timestamp" =&gt; 1718841600, "name" =&gt; "orders", "value" =&gt; 42],
+            ["timestamp" =&gt; 1718845200, "name" =&gt; "orders", "value" =&gt; 51],
+            ["timestamp" =&gt; 1718848800, "name" =&gt; "orders", "value" =&gt; 47],
+            ["timestamp" =&gt; 1718852400, "name" =&gt; "orders", "value" =&gt; 63],
+        ],
+    ]),
+]);
+curl_exec($ch);            // 204 No Content on success
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/data_sources/ingest")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_source: "store_metrics",
+  records: [
+    { timestamp: 1718841600, name: "orders", value: 42 },
+    { timestamp: 1718845200, name: "orders", value: 51 },
+    { timestamp: 1718848800, name: "orders", value: 47 },
+    { timestamp: 1718852400, name: "orders", value: 63 },
+  ],
+}.to_json
+
+Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+# =&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/data_sources/ingest"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());  // 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+await client.PostAsync("https://api.temporis.co/v1/data_sources/ingest", content);  // 204 No Content</code></pre></div>
+          </div>
+
+          <h2>Response</h2>
+          <p>सफलता पर endpoint खाली body के साथ <strong>204 No Content</strong> लौटाता है:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>204 No Content</code></pre></div>
+
+          <h2>Upsert व्यवहार</h2>
+          <p>प्रत्येक record की key जोड़ी <code>(timestamp, name)</code> होती है। उसी timestamp और series नाम के साथ record दोबारा भेजने पर stored मान overwrite हो जाता है।</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Retries और backfills idempotent हैं</div><p>चूंकि write एक upsert है, आप किसी विफल request को सुरक्षित रूप से दोबारा भेज सकते हैं या ऐतिहासिक data फिर से भेज सकते हैं — duplicates जमा होने के बजाय उसी key पर समाहित हो जाते हैं।</p></div>
+          </div>
+
+          <h2>Batching</h2>
+          <p>प्रति request एक record भेजने के बजाय एक ही request में कई records भेजना बेहतर है। Batching round trips और overhead को काफी कम कर देता है। history लोड करते समय, इसे एक बार में एक point स्ट्रीम करने के बजाय प्रत्येक में कई records के chunks में भेजें।</p>
+
+          <h2>Errors</h2>
+          <p>Errors HTTP status के साथ <code>{ "detail": "..." }</code> रूप की एक JSON body लौटाते हैं।</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Status</th><th>detail संदेश</th><th>अर्थ</th></tr></thead>
+            <tbody>
+              <tr><td>401</td><td>Invalid access token. / Missing access token.</td><td>Authentication विफल — अपना token जांचें।</td></tr>
+              <tr><td>404</td><td>Data source not found.</td><td>नामित data source मौजूद नहीं है। पहले इसे dashboard में बनाएं।</td></tr>
+              <tr><td>409</td><td>Data source is archived.</td><td>data source archived है और writes स्वीकार नहीं कर सकता। इसे unarchive करें या दूसरा source उपयोग करें।</td></tr>
+            </tbody>
+          </table></div>
+          <p>पूरे रेफरेंस के लिए <a href="../api/errors.html">Errors &amp; status codes</a> देखें।</p>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Data sources →</p><p class="doc-card-desc">Temporis आपकी named series को कैसे store करता है।</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">prediction बनाएं →</p><p class="doc-card-desc">आपके द्वारा ingest किए गए data से forecast करें।</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">data तैयार करना →</p><p class="doc-card-desc">अच्छे forecast के लिए अपनी series तैयार करें।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

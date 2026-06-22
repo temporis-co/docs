@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>データプロファイルのチューニング — Temporis ドキュメント</title>
+  <meta name="description" content="データのリズムに合った interval、パッチ、履歴、欠損の設定を選び、予測の精度を目に見えて向上させましょう。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>ガイド</span><span class="sep">/</span><span>データプロファイルのチューニング</span></nav>
+          <h1>データプロファイルのチューニング</h1>
+          <p class="docs-lead">デフォルト設定でも機能しますが、プロファイルをデータのリズムに合わせることで予測は目に見えて良くなります。ここでは各設定の選び方を説明します。（各設定は<a href="../concepts/data-profiles.html">データプロファイル</a>で定義されています。）</p>
+
+          <h2>interval をデータの周期に合わせる</h2>
+          <p>最も重要な設定は <code>interval</code> です。これは観測値をリサンプリングするバケットの大きさ（秒単位）です。データの<strong>実際のサンプリング周期</strong>に設定してください。注文を 1 時間に 1 回記録しているなら <code>3600</code> を、1 日に 1 つの数値があるなら <code>86400</code> を使います。</p>
+          <p>どちら側に間違えてもモデルは苦戦します。</p>
+          <ul>
+            <li><strong>細かすぎる</strong> — 実際の周期より短い interval は、補完されたバケットで系列を水増しし、コンテキストウィンドウを信号ではなくノイズや空白に費やしてしまいます。</li>
+            <li><strong>粗すぎる</strong> — 周期より長い interval は、実際の構造を平均化して消し去ってしまいます。1 時間ごとの需要パターンは、日次にバケット化すれば単に消えてしまいます。</li>
+          </ul>
+          <p><code>hourly_orders</code> プロファイルは <code>interval: 3600</code> を使っています。これは <code>store_metrics</code> が 1 時間に 1 つの注文数を記録しているためです。まずはデータが実際に届く周期に合わせることから始めてください。</p>
+
+          <h2>履歴の量: num_patches と min_patches</h2>
+          <p>この 2 つの設定は、予測に関わる履歴の<em>最大量</em>と<em>最小量</em>を制御します。</p>
+          <p><code>num_patches</code> はコンテキストウィンドウで、モデルが読み取る直近履歴のパッチの最大数です。パッチが多いほど視野に入る過去のサイクルが増え、モデルが捉えられる季節性も増えます。週次や年次の構造を「見せたい」ときは増やしてください。ただし効果は逓減します。ある点を超えると、現在を反映しない古い履歴を与えることになり、トークンが増えるだけで予測は良くなりません。</p>
+          <p><code>min_patches</code> は下限で、プロファイルが予測を提供するために必要な最小限の履歴です。これを下回ると、predict 呼び出しは <strong>409「Not enough data for this data profile.」</strong> を返します。わずかなデータ点に基づく予測を返すより、信頼度の低い予測を<em>拒否</em>したい場合に <code>min_patches</code> を引き上げてください。早すぎる推測が誤解を招くような、新しく開始したばかりの系列に有用です。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>範囲として考えてください。<code>min_patches</code> は「これを下回ったら試みもしない」、<code>num_patches</code> は「これより過去はさかのぼらない」です。</p></div>
+          </div>
+
+          <h2>解像度 vs. 予測範囲: patch_len と patch_spacing</h2>
+          <p>パッチは、モデルが一度に読み書きするデータ点のかたまりです。<code>patch_len</code> はそのかたまりに含まれるデータ点の数を設定します。<code>patch_spacing</code> は実際に使うデータ点同士の間隔（ストライド）を設定します。これは系列をダウンサンプリングし、その過程で生成される各ステップがどれだけ先まで到達するかを引き伸ばします。</p>
+          <p>重要な関係: 予測点間の<strong>実効的な時間ステップ</strong>は <code>interval * patch_spacing</code> 秒です。<code>interval: 3600</code> かつ <code>patch_spacing: 1</code> の場合、各ステップは 1 時間です。<code>patch_spacing</code> を <code>3</code> に上げると各ステップは 3 時間をカバーし、同じ数の生成点が 3 倍先の未来まで、より粗い解像度で到達します。</p>
+          <p>つまりこれは<strong>詳細さと到達範囲</strong>のトレードオフです。きめ細かい近未来の予測が必要なときは spacing を小さく保ち、より長い予測範囲が重要で粗いステップを許容できるときは広げてください。</p>
+
+          <h2>水準 vs. 成長: use_diffs</h2>
+          <p><code>use_diffs</code>（対数差分変換）は、生の水準ではなく<em>相対的な変化</em>（点から点への対数成長）でモデルに処理させる指示です。</p>
+          <ul>
+            <li>乗法的に成長・複利的に増加する系列には<strong>オンにしてください</strong>。売上、価格、ユーザー数など、トレンドがあるものや「足し算」ではなく「倍増」するもの全般です。成長をモデル化することで、上昇する系列が過去の水準に固定されるのを防ぎます。</li>
+            <li>固定された範囲を推移する有界または定常な水準には<strong>オフのままにしてください</strong>。稼働率のパーセンテージ、気温、飽和率など、戻るべき自然な水準を持つものです。これらを差分化すると単にノイズが加わるだけです。</li>
+          </ul>
+          <p>手早い判定法: 系列の単位を倍にしたら典型的な変動幅も倍になるべきなら、それは乗法的なので <code>use_diffs</code> をオンにしてください。</p>
+
+          <h2>停止時間のマスク: 除外ウィンドウ</h2>
+          <p>一部の系列には、設計上何も起こらない時間帯が繰り返し存在します。夜間に閉まる市場や、営業時間外の店舗などです。その停止時間を残したままにすると、モデルはその平坦またはゼロの区間を実際の信号として扱い、存在しないパターンを学習してしまいます。</p>
+          <p><code>exclude_window</code>（タイムゾーンと開始・終了の時刻からなる）はその繰り返しの範囲をマスクし、モデルが読み取る系列から除外します。系列が構造的にアイドル状態になる時間帯に設定してください。たとえば市場価格を読み取るプロファイルで夜間をマスクすれば、営業時間中の挙動をクリーンに保てます。</p>
+
+          <h2>欠損の許容: fill_limit</h2>
+          <p><code>fill_limit</code> は、Temporis が前方補完する連続した欠損バケットの最長の長さです。この上限より短い欠損は最後の値を引き継いで橋渡しされ、上限より長い欠損は穴として残され、それらの行は削除されます。</p>
+          <ul>
+            <li>より長い障害を橋渡しするには<strong>引き上げてください</strong>。センサーがときどきしばらくオフラインになるような、最後の読み取りを引き継ぐのが妥当な場合です。</li>
+            <li>大きな穴をまたいでデータを作り出したくない場合は<strong>引き下げてください</strong>。長い欠損が本当に「不明」を意味し、平坦に引き継がれた線が誤解を招く場合です。</li>
+          </ul>
+
+          <h2>トラブルシューティング</h2>
+          <div class="table-wrap"><table><thead><tr><th>症状</th><th>考えられる原因</th><th>試すこと</th></tr></thead><tbody>
+            <tr><td>409「Not enough data」</td><td>データ点が少なすぎる、または <code>min_patches</code> が高すぎる</td><td>履歴をもっと取り込む、または <code>min_patches</code> を下げる</td></tr>
+            <tr><td>予測が日次パターンを無視する</td><td><code>interval</code> が粗すぎる、またはコンテキストが短すぎる</td><td><code>interval</code> を周期に合わせる。<code>num_patches</code> を上げる</td></tr>
+            <tr><td>トレンドのある系列で予測が行き過ぎる</td><td>成長ではなく生の水準をモデル化している</td><td><code>use_diffs</code> を有効にする</td></tr>
+            <tr><td>既知の休止期間にわたっておかしな値が出る</td><td>停止時間が系列に含まれている</td><td>その範囲に <code>exclude_window</code> を設定する</td></tr>
+            <tr><td>行が削除される / 系列が疎に見える</td><td>欠損が <code>fill_limit</code> を超えている</td><td><code>fill_limit</code> を上げる、または送るデータを密にする</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>設定は 1 つずつ変更して予測を比較してください。各調整に目に見える独立した効果があると、チューニングの理由づけがしやすくなります。</p></div>
+          </div>
+
+          <h2>関連項目</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">データプロファイル →</p><p class="doc-card-desc">このガイドのすべての設定の完全な定義。</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">サンプルの扱い方 →</p><p class="doc-card-desc">サンプリングされた軌道を点予測と帯に変換する。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">予測 →</p><p class="doc-card-desc">サンプリングがどのように確率的な予測を生み出すか。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

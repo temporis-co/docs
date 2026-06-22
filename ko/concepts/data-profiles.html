@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>데이터 프로필 — Temporis Docs</title>
+  <meta name="description" content="데이터 프로필은 Temporis에게 데이터 소스를 어떻게 읽을지 알려주는 레시피입니다. 어떤 시계열을, 어떤 주기로, 얼마만큼의 이력으로, 어떻게 정제할지를 정의합니다.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>개념</span><span class="sep">/</span><span>데이터 프로필</span></nav>
+          <h1>데이터 프로필</h1>
+          <p class="docs-lead">데이터 프로필은 Temporis에게 데이터 소스를 어떻게 읽을지 알려주는 레시피입니다. 어떤 시계열을, 어떤 주기로, 얼마만큼의 이력으로, 어떻게 정제할지를 정의합니다. 바로 이것이 여러분이 예측 대상으로 삼는 대상입니다.</p>
+
+          <h2>프로필이 정의하는 것</h2>
+          <p><a href="data-sources.html">데이터 소스</a>는 원시 행을 담고 있습니다. 프로필은 이러한 행을 모델이 읽을 수 있는 깔끔하고 일정한 간격의 신호로 변환합니다 — 시계열을 선택하고, 관측값을 시간 격자에 맞춰 정렬하고, 얼마만큼의 이력을 사용할지 결정하고, 빈 구간을 정리합니다. <a href="../api/predict.html">predict</a>를 호출할 때는 소스가 아니라 프로필을 지정합니다.</p>
+
+          <p>프로필은 대시보드에서 생성하고 편집합니다. 여기서의 예시는 <code>hourly_orders</code>입니다. 이 프로필은 <code>store_metrics</code>의 <code>orders</code> 시계열을 1시간 격자(<code>interval</code> 3600)로 읽습니다.</p>
+
+          <h2>데이터 선택하기</h2>
+          <h3>소스와 시계열</h3>
+          <p>프로필이 무엇을 읽을지는 두 가지 설정으로 선택합니다:</p>
+          <ul>
+            <li><code>data_source</code> — 읽어 들일 데이터 소스.</li>
+            <li><code>names</code> — 해당 소스 내의 하나 이상의 시계열 이름.</li>
+          </ul>
+          <p>이름을 하나만 지정하면 단변량(univariate) 예측이 됩니다. <code>orders</code>와 <code>visitors</code>처럼 여러 개를 지정하면 프로필이 <strong>다변량(multivariate)</strong>이 됩니다. 시계열이 공동으로 예측되므로 모델이 이들 간의 관계를 활용할 수 있습니다.</p>
+
+          <h2>시간 격자</h2>
+          <p>실제 관측값이 완벽하게 일정한 주기로 도착하는 경우는 드물기 때문에, 프로필은 이를 일정한 격자에 맞춰 리샘플링합니다.</p>
+
+          <p><code>interval</code>은 각 격자 버킷의 크기를 초 단위로 나타냅니다. <code>interval</code>이 3600이면 관측값이 1시간 단위 버킷에 정렬됩니다. 격자는 여러분의 <strong>가장 최근</strong> 관측값을 기준으로 고정되어 거기서부터 뒤로 단계를 밟아가므로, 최신 데이터는 항상 격자에 깔끔하게 맞아떨어집니다.</p>
+
+          <p>모델은 모든 지점을 하나씩 읽지 않습니다. 대신 <em>패치(patch)</em> 단위, 즉 시계열의 고정 크기 청크 단위로 작동합니다:</p>
+          <ul>
+            <li><code>patch_len</code> — 하나의 패치를 구성하는 지점의 개수.</li>
+            <li><code>patch_spacing</code> — 사용하는 지점 사이의 간격(stride)으로, 일종의 다운샘플링입니다.</li>
+            <li><code>num_patches</code> — 컨텍스트로 사용할 이력 패치의 최대 개수.</li>
+            <li><code>min_patches</code> — 예측을 제공하기 위해 필요한 이력 패치의 최소 개수.</li>
+          </ul>
+
+          <p>직관적으로 말하면, 모델이 보는 컨텍스트는 대략 최근 이력 <code>num_patches</code>개 패치 분량입니다. 프로필에서 사용 가능한 패치가 <code>min_patches</code>개보다 적으면 예측을 제공할 수 없으며 <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code>가 반환됩니다.</p>
+
+          <p>간격은 예측 해상도도 결정합니다. 예측 지점 사이의 실효 단계는 <code>interval × patch_spacing</code>초입니다. <code>interval</code>이 3600이고 <code>patch_spacing</code>이 1이면 예측값은 1시간 간격으로 나옵니다.</p>
+
+          <h2>시계열 정제하기</h2>
+          <p>리샘플링 후에는 일부 버킷에 관측값이 없을 수 있습니다. 이를 처리하는 방식은 두 가지 설정으로 결정됩니다:</p>
+          <ul>
+            <li><code>fill_limit</code> — 전방 채우기(forward-fill, 마지막으로 알려진 값을 앞으로 이어가는 것)가 적용되는 연속된 빈 버킷의 최대 길이입니다. 이보다 긴 간격은 실제로 누락된 것으로 간주되어 해당 행은 대신 제거됩니다.</li>
+            <li><code>exclude_window</code> — 마스킹할 반복적인 하루 중 시간 구간으로, 시간대(timezone)와 시작 및 종료 시각으로 지정합니다. 시장이 닫힌 야간 시간대처럼 예상되는 비활동 시간에 사용하여, 그 조용한 구간이 시계열을 왜곡하지 않도록 합니다.</li>
+          </ul>
+
+          <h2>수준(level) 대 성장(growth)</h2>
+          <p>어떤 시계열은 <em>수준</em>으로 모델링하는 것이 가장 좋고, 또 어떤 시계열은 <em>상대적 변화</em>로 모델링하는 것이 가장 좋습니다. <code>use_diffs</code> 설정(로그-차분 변환)은 모델이 원시 값 대신 로그 성장 — 한 단계에서 다음 단계로의 비례적 변화 — 을 기준으로 작동하도록 전환합니다.</p>
+
+          <p>곱셈적으로 움직이거나 넓은 범위에 걸쳐 강하게 추세를 보이는 시계열에는 이 옵션을 켜세요. 매출, 가격, 그리고 절대적 변화보다 10% 변화가 더 중요한 모든 경우가 해당됩니다. 유계이며 대략 정상(stationary)인 범위에 머물러 원시 수준 자체가 이미 예측하기에 자연스러운 시계열에는 이 옵션을 꺼두세요.</p>
+
+          <h2>준비 상태</h2>
+          <p>프로필은 생성하는 즉시 사용할 수 있는 것이 아닙니다. Temporis는 먼저 정규화 통계를 계산합니다 — 값을 모델이 기대하는 범위로 스케일링할 수 있도록 데이터의 전형적인 분포를 학습합니다. 이를 수행할 만큼 충분한 데이터가 모이기 전까지 프로필은 준비되지 않은 상태이며, 대시보드에 준비 상태가 표시됩니다.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>준비되지 않은 프로필을 대상으로 예측하면 <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code>가 반환됩니다. 대시보드에서 프로필이 준비되었다고 표시될 때까지 기다린 후 predict를 호출하세요.</p></div>
+          </div>
+
+          <h2>설정 레퍼런스</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>설정</th><th>제어 대상</th><th>예시</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>프로필이 읽는 데이터 소스.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>읽어 들일 시계열. 여러 이름은 공동으로 예측됩니다(다변량).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>리샘플링 버킷(초 단위). 격자는 가장 최근 관측값을 기준으로 고정됩니다.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>하나의 패치에 포함되는 지점 개수 — 모델이 한 번에 읽고 쓰는 청크.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>사용하는 지점 사이의 간격. 예측 단계는 <code>interval × patch_spacing</code>초입니다.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>컨텍스트로 사용하는 이력 패치의 최대 개수.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>예측 제공에 필요한 최소 패치 개수. 이보다 적으면 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>전방 채우기할 빈 버킷의 최대 연속 길이. 더 긴 간격은 행을 제거합니다.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>원시 수준 대신 상대적 변화(로그 성장)를 모델링합니다.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>마스킹할 반복적인 하루 중 시간 구간(시간대 + 시작 + 종료).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>어떤 값을 선택해야 할지 모르겠나요? <a href="../guides/tuning-profile.html">프로필 튜닝하기</a>에서 여러분의 데이터에 맞는 <code>interval</code>, 이력 길이, 정제 설정을 고르는 과정을 안내합니다.</p></div>
+          </div>
+
+          <h2>다음 단계</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">프로필 튜닝하기 →</p><p class="doc-card-desc">각 설정에 알맞은 값을 선택하는 방법입니다.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">예측 →</p><p class="doc-card-desc">프로필을 대상으로 예측할 때 돌려받는 결과입니다.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">predict 엔드포인트에 대한 전체 레퍼런스입니다.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

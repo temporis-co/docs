@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>创建预测 — Temporis 文档</title>
+  <meta name="description" content="使用预测端点从 Temporis 数据画像中抽取一条或多条采样的未来轨迹。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/predict" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>API 参考</span><span class="sep">/</span><span>创建预测</span></nav>
+          <h1>创建预测</h1>
+          <p class="docs-lead">从数据画像中抽取一条或多条采样的未来轨迹。需要已绑定信用卡。</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/predict</span></div>
+
+          <h2>请求主体</h2>
+          <p>你需要指定一个数据画像，以及所需样本的形态。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">必填</span></div>
+              <p class="param-desc">你的某个画像的名称，或一个公共画像，例如 <code>temporis/polymarket</code>。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">必填</span></div>
+              <p class="param-desc">要抽取的独立未来轨迹数量。必须至少为 1。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">必填</span></div>
+              <p class="param-desc">采样温度，大于 0。值越高，样本越分散；值越低，样本越接近最可能的路径。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">必填</span></div>
+              <p class="param-desc">核采样（nucleus sampling）截断值，取值范围 0 到 1。值越低，越会裁掉不太可能的尾部；1.0 则保留完整分布。</p>
+            </div>
+          </div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p><code>count</code>、<code>temperature</code> 和 <code>top_p</code> 在<a href="../concepts/predictions.html">预测</a>中有深入说明。</p></div>
+          </div>
+
+          <h2>请求示例</h2>
+          <p>下面的示例以中性温度从 <code>hourly_orders</code> 画像中抽取五条轨迹：</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 5,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_profile": "hourly_orders",
+		"count":        5,
+		"temperature":  1.0,
+		"top_p":        0.9,
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/predict", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&amp;result)
+	fmt.Println(result)
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/predict");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_profile" =&gt; "hourly_orders",
+        "count"        =&gt; 5,
+        "temperature"  =&gt; 1.0,
+        "top_p"        =&gt; 0.9,
+    ]),
+]);
+$result = json_decode(curl_exec($ch), true);
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/predict")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_profile: "hourly_orders",
+  count: 5,
+  temperature: 1.0,
+  top_p: 0.9,
+}.to_json
+
+res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+result = JSON.parse(res.body)</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/predict"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.body());</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+var response = await client.PostAsync("https://api.temporis.co/v1/predict", content);
+var result = await response.Content.ReadAsStringAsync();
+Console.WriteLine(result);</code></pre></div>
+          </div>
+
+          <h2>响应字段</h2>
+          <p>请求成功时返回 HTTP 200，主体如下。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">本次预测请求的唯一标识符。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">回显你所请求的画像名称。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Unix 秒：预测所从其继续的最后一个观测时间戳。每条轨迹都从这里向前推进。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">采样得到的轨迹。其长度等于你请求的 <code>count</code>。</p>
+            </div>
+          </div>
+
+          <h3>预测对象</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">loss</span><span class="param-type">number</span></div>
+              <p class="param-desc">值越低，表示模型认为这条轨迹越典型。可用它来排序或挑选一个有代表性的样本。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data</span><span class="param-type">array</span></div>
+              <p class="param-desc">预测的各行。每一行包含一个 <code>timestamp</code>，外加画像中每个序列名称对应的一个字段。</p>
+            </div>
+          </div>
+
+          <h2>响应示例</h2>
+          <p>对于上述单序列的 <code>orders</code> 画像，<code>predict_from</code> 为最后一个观测小时，各行以每次一小时的步长向前推进：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "a3f9c1d7e84b2065",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718852400,
+  "predictions": [
+    {
+      "loss": 1.84,
+      "data": [
+        { "timestamp": 1718856000, "orders": 58 },
+        { "timestamp": 1718859600, "orders": 61 },
+        { "timestamp": 1718863200, "orders": 55 }
+      ]
+    },
+    {
+      "loss": 2.07,
+      "data": [
+        { "timestamp": 1718856000, "orders": 49 },
+        { "timestamp": 1718859600, "orders": 66 },
+        { "timestamp": 1718863200, "orders": 72 }
+      ]
+    }
+    // remaining samples omitted
+  ]
+}</code></pre></div>
+
+          <h2>公共数据画像</h2>
+          <p>你可以无需任何自有设置，通过将公共画像名称作为 <code>data_profile</code> 传入来对共享数据集进行预测。这些画像由 Temporis 维护，可随时使用：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 3, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+
+          <h2>错误</h2>
+          <p>错误会返回 HTTP 状态码以及形如 <code>{ "detail": "..." }</code> 的 JSON 主体。</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>状态</th><th>detail 消息</th><th>含义</th></tr></thead>
+            <tbody>
+              <tr><td>400</td><td>Invalid prediction parameters.</td><td>某个参数超出范围，例如 count 小于 1 或 temperature 不大于 0。</td></tr>
+              <tr><td>402</td><td>Add a credit card before using the API. / There is a payment issue. Add a new credit card.</td><td>没有有效的计费方式。请在仪表板中添加或修正信用卡。</td></tr>
+              <tr><td>404</td><td>Data profile not found.</td><td>不存在该名称的画像。</td></tr>
+              <tr><td>404</td><td>Data profile is not ready to serve.</td><td>画像已存在但尚未完成准备。</td></tr>
+              <tr><td>409</td><td>Not enough data for this data profile.</td><td>该画像的历史数据少于其最低要求。请摄取更多数据后再重试。</td></tr>
+              <tr><td>502</td><td>Prediction failed.</td><td>服务端的瞬时故障。可使用退避策略安全重试。</td></tr>
+            </tbody>
+          </table></div>
+          <p>完整参考请参阅<a href="../api/errors.html">错误与状态码</a>。</p>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">预测 →</p><p class="doc-card-desc">采样、count、temperature 和 top_p 如何塑造一次预测。</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">使用样本 →</p><p class="doc-card-desc">将轨迹转化为区间和点预测。</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">为预测准备数据源的配方。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

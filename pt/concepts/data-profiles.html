@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perfis de dados — Temporis Docs</title>
+  <meta name="description" content="Um perfil de dados é a receita que diz ao Temporis como ler uma fonte de dados: quais séries, em que cadência, quanto histórico e como limpá-las.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Conceitos</span><span class="sep">/</span><span>Perfis de dados</span></nav>
+          <h1>Perfis de dados</h1>
+          <p class="docs-lead">Um perfil de dados é a receita que diz ao Temporis como ler uma fonte de dados: quais séries, em que cadência, quanto histórico e como limpá-las. É contra ele que você faz previsões.</p>
+
+          <h2>O que um perfil define</h2>
+          <p>Uma <a href="data-sources.html">fonte de dados</a> contém linhas brutas. Um perfil transforma essas linhas em um sinal limpo e regularmente espaçado que o modelo pode ler — escolhendo as séries, encaixando as observações em uma grade temporal, decidindo quanto histórico usar e organizando lacunas. Quando você chama <a href="../api/predict.html">predict</a>, você nomeia um perfil, não uma fonte.</p>
+
+          <p>Você cria e edita perfis no painel. O exemplo aqui é <code>hourly_orders</code>: ele lê a série <code>orders</code> de <code>store_metrics</code> em uma grade de uma hora (<code>interval</code> 3600).</p>
+
+          <h2>Selecionando os dados</h2>
+          <h3>Fonte e séries</h3>
+          <p>Duas configurações escolhem o que o perfil lê:</p>
+          <ul>
+            <li><code>data_source</code> — de qual fonte de dados ler.</li>
+            <li><code>names</code> — um ou mais nomes de séries dentro dessa fonte.</li>
+          </ul>
+          <p>Listar um único nome resulta em uma previsão univariada. Listar vários — digamos <code>orders</code> e <code>visitors</code> — torna o perfil <strong>multivariado</strong>: as séries são previstas em conjunto, de modo que o modelo pode usar a relação entre elas.</p>
+
+          <h2>A grade temporal</h2>
+          <p>Observações reais raramente chegam em uma cadência perfeitamente uniforme, então um perfil as reamostra em uma grade regular.</p>
+
+          <p><code>interval</code> é o tamanho de cada intervalo da grade em segundos. Com <code>interval</code> 3600, as observações são encaixadas em intervalos de uma hora. A grade é ancorada na sua observação <strong>mais recente</strong> e avança para trás a partir dela, de modo que os dados mais recentes sempre caem exatamente sobre a grade.</p>
+
+          <p>O modelo não lê cada ponto um de cada vez. Ele trabalha em <em>patches</em> — blocos de tamanho fixo da série:</p>
+          <ul>
+            <li><code>patch_len</code> — quantos pontos compõem um patch.</li>
+            <li><code>patch_spacing</code> — o passo entre os pontos que ele usa, uma forma de subamostragem.</li>
+            <li><code>num_patches</code> — o máximo de patches de histórico que ele usará como contexto.</li>
+            <li><code>min_patches</code> — o mínimo de patches de histórico necessário para atender a uma previsão.</li>
+          </ul>
+
+          <p>Intuitivamente: o contexto que o modelo enxerga é de aproximadamente <code>num_patches</code> patches de histórico recente. Se um perfil tiver menos de <code>min_patches</code> patches disponíveis, ele não pode atender e você recebe <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>O espaçamento também define a resolução da sua previsão. O passo efetivo entre os pontos da previsão é <code>interval × patch_spacing</code> segundos. Com <code>interval</code> 3600 e <code>patch_spacing</code> 1, as previsões caem com uma hora de distância entre si.</p>
+
+          <h2>Limpando a série</h2>
+          <p>Após a reamostragem, alguns intervalos podem não ter observação. Duas configurações decidem como isso é tratado:</p>
+          <ul>
+            <li><code>fill_limit</code> — a sequência mais longa de intervalos vazios consecutivos que será preenchida para frente (carregando adiante o último valor conhecido). Uma lacuna maior do que isso é tratada como genuinamente ausente, e essas linhas são descartadas.</li>
+            <li><code>exclude_window</code> — uma janela recorrente de horário do dia a ser mascarada, informada como um fuso horário mais um início e um fim. Use-a para tempo ocioso esperado, como horas da madrugada em que um mercado está fechado, de modo que esse trecho quieto não distorça a série.</li>
+          </ul>
+
+          <h2>Níveis vs. crescimento</h2>
+          <p>Algumas séries são mais bem modeladas pelo seu <em>nível</em>; outras, pela sua <em>variação relativa</em>. A configuração <code>use_diffs</code> (a transformação log-diff) faz o modelo trabalhar sobre o crescimento logarítmico — a variação proporcional de um passo para o seguinte — em vez do valor bruto.</p>
+
+          <p>Ative-a para séries que se movem de forma multiplicativa ou que apresentam forte tendência ao longo de uma faixa ampla: receita, preços, qualquer coisa em que uma variação de 10% importa mais do que uma variação absoluta. Deixe-a desativada para séries que permanecem em uma faixa limitada e aproximadamente estacionária, em que o nível bruto já é a coisa natural a prever.</p>
+
+          <h2>Prontidão</h2>
+          <p>Um perfil não fica utilizável no instante em que você o cria. O Temporis primeiro calcula estatísticas de normalização — aprendendo a dispersão típica dos seus dados para poder escalar os valores para a faixa que o modelo espera. Até ter dados suficientes para isso, o perfil não está pronto, e o painel mostra seu estado de prontidão.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Fazer uma previsão contra um perfil que não está pronto retorna <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> Aguarde até o painel informar o perfil como pronto e, então, chame predict.</p></div>
+          </div>
+
+          <h2>Referência de configurações</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Configuração</th><th>O que controla</th><th>Exemplo</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>Qual fonte de dados o perfil lê.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>Séries a ler; vários nomes são previstos em conjunto (multivariado).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>Intervalo de reamostragem em segundos; grade ancorada na observação mais recente.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>Número de pontos em um patch — o bloco que o modelo lê e escreve de cada vez.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>Passo entre os pontos usados; o passo da previsão é <code>interval × patch_spacing</code> segundos.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>Máximo de patches de histórico usados como contexto.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>Mínimo de patches necessário para atender; abaixo disso, 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>Sequência mais longa de intervalos vazios a preencher para frente; lacunas maiores descartam linhas.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>Modela a variação relativa (crescimento logarítmico) em vez do nível bruto.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>Janela recorrente de horário do dia a mascarar (fuso horário + início + fim).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Não tem certeza de quais valores escolher? <a href="../guides/tuning-profile.html">Ajustando um perfil</a> guia você na escolha de <code>interval</code>, comprimento do histórico e das configurações de limpeza para seus dados.</p></div>
+          </div>
+
+          <h2>Próximos passos</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajustando um perfil →</p><p class="doc-card-desc">Como escolher bons valores para cada configuração.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Previsões →</p><p class="doc-card-desc">O que você recebe de volta ao fazer uma previsão contra um perfil.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">API de predição →</p><p class="doc-card-desc">A referência completa do endpoint de predição.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

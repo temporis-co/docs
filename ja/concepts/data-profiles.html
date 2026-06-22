@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>データプロファイル — Temporis Docs</title>
+  <meta name="description" content="データプロファイルは、データソースをどう読み取るかを Temporis に伝えるレシピです。どの系列を、どの間隔で、どれだけの履歴を、どうクリーニングして読むかを定めます。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>コンセプト</span><span class="sep">/</span><span>データプロファイル</span></nav>
+          <h1>データプロファイル</h1>
+          <p class="docs-lead">データプロファイルは、データソースをどう読み取るかを Temporis に伝えるレシピです。どの系列を、どの間隔で、どれだけの履歴を、どうクリーニングして読むかを定めます。予測の対象となるのは、このプロファイルです。</p>
+
+          <h2>プロファイルが定義するもの</h2>
+          <p><a href="data-sources.html">データソース</a>は生の行を保持します。プロファイルはそれらの行を、モデルが読み取れるクリーンで規則的な間隔の信号へと変えます。すなわち、系列を選び、観測値を時間グリッドにスナップさせ、どれだけの履歴を使うかを決め、欠損を整えます。<a href="../api/predict.html">predict</a> を呼び出すときに指定するのは、ソースではなくプロファイルです。</p>
+
+          <p>プロファイルの作成と編集はダッシュボードで行います。ここでの例は <code>hourly_orders</code> です。これは <code>store_metrics</code> から <code>orders</code> 系列を 1 時間グリッド（<code>interval</code> が 3600）で読み取ります。</p>
+
+          <h2>データの選択</h2>
+          <h3>ソースと系列</h3>
+          <p>2 つの設定が、プロファイルが何を読み取るかを選びます。</p>
+          <ul>
+            <li><code>data_source</code> — どのデータソースから読み取るか。</li>
+            <li><code>names</code> — そのソース内の 1 つ以上の系列名。</li>
+          </ul>
+          <p>単一の名前を指定すると、単変量の予測になります。複数の名前、たとえば <code>orders</code> と <code>visitors</code> を指定すると、プロファイルは<strong>多変量</strong>になります。系列が同時に予測されるため、モデルはそれらの間の関係を利用できます。</p>
+
+          <h2>時間グリッド</h2>
+          <p>実際の観測値が完全に均一な間隔で届くことはまれなので、プロファイルはそれらを規則的なグリッドへリサンプリングします。</p>
+
+          <p><code>interval</code> は各グリッドバケットのサイズで、秒単位です。<code>interval</code> が 3600 の場合、観測値は 1 時間ごとのバケットにスナップされます。グリッドは<strong>最も新しい</strong>観測値を基準点とし、そこから過去へさかのぼってステップします。そのため、最新のデータは常にグリッドにきれいに収まります。</p>
+
+          <p>モデルはすべての点を 1 つずつ読み取るわけではありません。系列を固定サイズのチャンクである<em>パッチ</em>単位で扱います。</p>
+          <ul>
+            <li><code>patch_len</code> — 何個の点が 1 つのパッチを構成するか。</li>
+            <li><code>patch_spacing</code> — 使用する点と点の間のストライドで、ダウンサンプリングの一種。</li>
+            <li><code>num_patches</code> — コンテキストとして使用する履歴のパッチ数の上限。</li>
+            <li><code>min_patches</code> — 予測を提供するために必要な履歴のパッチ数の下限。</li>
+          </ul>
+
+          <p>直感的に言えば、モデルが見るコンテキストは、おおむね <code>num_patches</code> 個分の直近の履歴のパッチです。利用可能なパッチが <code>min_patches</code> 未満であるプロファイルは予測を提供できず、<strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code> が返されます。</p>
+
+          <p>スペーシングは予測の解像度も決めます。予測点と点の間の実効的なステップは <code>interval × patch_spacing</code> 秒です。<code>interval</code> が 3600、<code>patch_spacing</code> が 1 の場合、予測は 1 時間間隔で並びます。</p>
+
+          <h2>系列のクリーニング</h2>
+          <p>リサンプリング後、観測値のないバケットが生じることがあります。それをどう扱うかを 2 つの設定が決めます。</p>
+          <ul>
+            <li><code>fill_limit</code> — 前方補完（直近の既知の値を前方へ持ち越す）の対象となる、連続した空バケットの最長の連なり。これより長いギャップは本当に欠損しているものとみなされ、その行は代わりに削除されます。</li>
+            <li><code>exclude_window</code> — マスクアウトする、繰り返される時刻帯のウィンドウ。タイムゾーンに加え、開始時刻と終了時刻で指定します。市場が閉じている夜間など、想定される無活動時間に使うことで、その静かな区間が系列を歪めないようにします。</li>
+          </ul>
+
+          <h2>水準か成長か</h2>
+          <p>系列によっては<em>水準</em>でモデル化するのが最適なものもあれば、<em>相対的な変化</em>でモデル化するのが最適なものもあります。<code>use_diffs</code> の設定（対数差分変換）は、生の値の代わりに対数成長、すなわち 1 ステップから次のステップへの比例的な変化に対してモデルを動作させるよう切り替えます。</p>
+
+          <p>乗法的に動く系列や、広いレンジで強くトレンドする系列にはこれをオンにします。たとえば revenue や価格など、絶対的な変化よりも 10% の動きのほうが重要なものです。一方、有界でおおむね定常なレンジに収まる系列、すなわち生の水準そのものを予測するのが自然な系列にはオフのままにします。</p>
+
+          <h2>準備状態</h2>
+          <p>プロファイルは作成した瞬間に使えるわけではありません。Temporis はまず正規化のための統計量を計算します。データの典型的な散らばりを学習し、値をモデルが期待するレンジへスケーリングできるようにするためです。それを行うのに十分なデータが揃うまでプロファイルは準備が整っておらず、ダッシュボードがその準備状態を表示します。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>準備が整っていないプロファイルに対して予測すると、<strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> が返されます。ダッシュボードがプロファイルを準備完了と表示するまで待ってから、predict を呼び出してください。</p></div>
+          </div>
+
+          <h2>設定リファレンス</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>設定</th><th>制御する内容</th><th>例</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>プロファイルが読み取るデータソース。</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>読み取る系列。複数の名前は同時に予測される（多変量）。</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>リサンプリングのバケット（秒単位）。グリッドは最も新しい観測値を基準とする。</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>1 つのパッチに含まれる点の数。モデルが一度に読み書きするチャンク。</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>使用する点の間のストライド。予測ステップは <code>interval × patch_spacing</code> 秒。</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>コンテキストとして使用する履歴のパッチ数の上限。</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>提供に必要なパッチ数の下限。これを下回ると 409 "Not enough data"。</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>前方補完する空バケットの最長の連なり。これより長いギャップは行を削除。</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>生の水準ではなく相対的な変化（対数成長）をモデル化する。</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>マスクする、繰り返される時刻帯のウィンドウ（タイムゾーン + 開始 + 終了）。</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>どの値を選べばよいか分からないときは、<a href="../guides/tuning-profile.html">プロファイルのチューニング</a>で、データに合わせた <code>interval</code>、履歴の長さ、クリーニング設定の選び方を順を追って説明しています。</p></div>
+          </div>
+
+          <h2>次のステップ</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">プロファイルのチューニング →</p><p class="doc-card-desc">各設定に適切な値を選ぶ方法。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">予測 →</p><p class="doc-card-desc">プロファイルに対して予測したときに返ってくるもの。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">predict エンドポイントの完全なリファレンス。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

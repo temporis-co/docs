@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How forecasting works — Temporis Docs</title>
+  <meta name="description" content="Temporis forecasts by reading your time series as a sequence and continuing it, the way a language model continues text. Build the mental model here.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>How forecasting works</span></nav>
+          <h1>How forecasting works</h1>
+          <p class="docs-lead">Temporis forecasts by treating your time series as a sequence a large model reads and continues — the way a language model continues text. This page builds that mental model before you touch the API.</p>
+
+          <h2>Forecasting is sequence prediction</h2>
+          <p>A language model reads a stretch of text and predicts what comes next. Temporis does the same thing with numbers. It reads the recent history of your series and continues it, one step at a time.</p>
+          <p>The model has already seen an enormous variety of time series — demand that spikes on weekends, prices that drift, energy load that cycles daily. From all of that it learned what tends to come next given what came before. So forecasting becomes a single, general question: given this history, what is a plausible continuation?</p>
+          <p>This is a different way of working than classical forecasting. Normally you would choose a model family, then fit its parameters to one series at a time — picking trend and seasonal terms, tuning them, and refitting whenever the data shifts. Temporis skips per-series model-building. You hand it the history and it continues the sequence directly, drawing on patterns learned across many series.</p>
+
+          <h2>From numbers to tokens</h2>
+          <p>Before the model can read your series, the raw values are turned into a sequence of discrete tokens — and the model's output is turned back into numbers. The pipeline runs in stages:</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">Resample</div><div class="kv-val">Clean the series and snap it onto a regular time grid, so the spacing between points is uniform.</div></div>
+            <div class="kv-row"><div class="kv-key">Normalize</div><div class="kv-val">Rescale values into a common range learned from your data's typical spread (roughly its 1st-to-99th percentile band), so different series look comparable to the model.</div></div>
+            <div class="kv-row"><div class="kv-key">Patch &amp; compress</div><div class="kv-val">Chunk the grid into patches and compress each patch with a frequency transform. A patch is the unit the model reads and writes at a time.</div></div>
+            <div class="kv-row"><div class="kv-key">Quantize</div><div class="kv-val">Map the compressed patches into a vocabulary of discrete tokens — the alphabet the model actually sees.</div></div>
+            <div class="kv-row"><div class="kv-key">Continue</div><div class="kv-val">The model reads the token sequence and generates a continuation, just as a language model continues text.</div></div>
+            <div class="kv-row"><div class="kv-key">Decode</div><div class="kv-val">Turn the generated tokens back into numbers, undoing the normalization so the forecast lands on your data's real scale.</div></div>
+          </div>
+          <p>Patches are the key idea here: they set the model's reading and writing unit. The model does not move one raw observation at a time — it moves a patch at a time, which is why the forecast advances in steps rather than single points.</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">You control this encoding</div><p>The settings on a <a href="../concepts/data-profiles.html">data profile</a> — its <code>interval</code>, <code>patch_len</code>, and <code>patch_spacing</code> — determine how your raw data is resampled and chunked into the patches above. Tuning the profile is how you adjust the encoding for your series.</p></div>
+          </div>
+
+          <h2>Why a distribution, not a single number</h2>
+          <p>Generation is sampling. Each time the model continues the sequence, it draws tokens rather than committing to one fixed answer, so two runs on the same history can produce two different futures. That is a feature, not noise.</p>
+          <p>A single prediction request asks for several continuations at once. The <code>count</code> parameter sets how many independent trajectories to draw; each is a complete, self-consistent path into the future. Together they form a probabilistic forecast: a cloud of plausible outcomes rather than one line.</p>
+          <p>Two controls shape how those draws are sampled. <code>temperature</code> sets how adventurous each step is — higher spreads the samples out, lower keeps them clustered near the model's most-likely path. <code>top_p</code> trims the unlikely tail before sampling. Every returned trajectory also carries a <code>loss</code>, which ranks how typical the model found it, so you can pick a representative path or weight the set.</p>
+          <p>The real-world value is the spread. Instead of one guess that is almost certainly slightly wrong, you see the range of futures the model considers plausible — enough to read best case, worst case, and how wide the uncertainty really is.</p>
+          <p>See <a href="../concepts/predictions.html">Predictions &amp; sampling</a> for how to read the response, and <a href="../guides/prediction-samples.html">Working with prediction samples</a> for turning a set of trajectories into intervals.</p>
+
+          <h2>Where data profiles fit</h2>
+          <p>A data profile is the saved recipe that binds your raw data to the encoding above. It points at a data source, names the series to read, and fixes the knobs that drive resampling and patching — so every prediction against that profile reads your data the same way.</p>
+          <p>The key knobs are <code>interval</code> (the resampling bucket in seconds), <code>patch_len</code> and <code>patch_spacing</code> (the size and stride of each patch), <code>num_patches</code> (how much history to read as context), and transforms like <code>use_diffs</code> for series that grow multiplicatively. The full list, with guidance on choosing each, lives in <a href="../concepts/data-profiles.html">Data profiles</a>.</p>
+
+          <h2>Next steps</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">The recipe that binds raw data to the encoding — and every knob you can tune.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions &amp; sampling →</p><p class="doc-card-desc">Read the response and shape it with count, temperature, and top_p.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Quickstart →</p><p class="doc-card-desc">Ingest data and run your first forecast end to end.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">On this page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

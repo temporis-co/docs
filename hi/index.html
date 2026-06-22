@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporis Docs — एक API के रूप में फ़ोरकास्टिंग</title>
+  <meta name="description" content="Temporis एक टाइम-सीरीज़ फ़ोरकास्टिंग API है। अपना डेटा भेजें, एक data profile परिभाषित करें, और एक ही request के साथ प्रोबैबिलिस्टिक फ़ोरकास्ट तैयार करें।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="index" data-base="">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <div class="docs-hero">
+            <span class="eyebrow">Temporis डॉक्यूमेंटेशन</span>
+            <h1>फ़ोरकास्टिंग, एक API के रूप में।</h1>
+            <p class="docs-lead">
+              Temporis आपकी टाइम सीरीज़ को प्रोबैबिलिस्टिक फ़ोरकास्ट में बदल देता है। अपने
+              नंबर स्ट्रीम करें, एक <strong>data profile</strong> के साथ बताएँ कि उन्हें कैसे पढ़ा जाना चाहिए,
+              और आगे क्या आने वाला है इसके फ़ोरकास्ट तैयार करने के लिए एक endpoint को कॉल करें — न कोई मॉडल
+              ट्रेन करना है, न कोई इन्फ़्रास्ट्रक्चर चलाना है।
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <a class="doc-card" href="quickstart.html">
+              <p class="doc-card-kicker">यहाँ से शुरू करें</p>
+              <p class="doc-card-title">Quickstart →</p>
+              <p class="doc-card-desc">एक API key से अपने पहले फ़ोरकास्ट तक लगभग पाँच मिनट में पहुँचें।</p>
+            </a>
+            <a class="doc-card" href="concepts/how-it-works.html">
+              <p class="doc-card-kicker">समझें</p>
+              <p class="doc-card-title">फ़ोरकास्टिंग कैसे काम करती है →</p>
+              <p class="doc-card-desc">Temporis के पीछे का विचार: एक टाइम सीरीज़ को ऐसी भाषा की तरह मानना जिसे एक मॉडल पढ़ सके।</p>
+            </a>
+            <a class="doc-card" href="api/predict.html">
+              <p class="doc-card-kicker">रेफ़रेंस</p>
+              <p class="doc-card-title">API रेफ़रेंस →</p>
+              <p class="doc-card-desc">हर endpoint के लिए सटीक request और response आकार।</p>
+            </a>
+          </div>
+
+          <h2>एक Temporis वर्कफ़्लो का आकार</h2>
+          <p>
+            Temporis में सब कुछ तीन संज्ञाओं के इर्द-गिर्द घूमता है। जैसे ही ये समझ में आ जाती हैं, पूरा
+            API स्वाभाविक रूप से समझ आने लगता है।
+          </p>
+
+          <div class="kv">
+            <div class="kv-row">
+              <div class="kv-key">Data source</div>
+              <div class="kv-val">एक नामित स्ट्रीम जिसमें आप कच्ची observations पुश करते हैं — जैसे <code>(timestamp, name, value)</code> पंक्तियों की एक टेबल। एक data source कई सीरीज़ रख सकता है।</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">Data profile</div>
+              <div class="kv-val">एक सेव की गई रेसिपी जो Temporis को बताती है कि किसी data source को <em>कैसे</em> पढ़ना है: कौन-सी सीरीज़, किस interval पर, कितना इतिहास, और इसे कैसे साफ़ करना है। आप इसी के विरुद्ध फ़ोरकास्ट करते हैं।</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">Prediction</div>
+              <div class="kv-val">किसी data profile के साथ <code>/v1/predict</code> को एक कॉल कई संभावित भविष्य लौटाती है, जिनमें से प्रत्येक आगे बढ़ते मानों का एक पूरा ट्रैजेक्टरी होता है।</div>
+            </div>
+          </div>
+
+          <p>
+            आप data sources और data profiles को
+            <a href="https://platform.temporis.co">Temporis डैशबोर्ड</a> में मैनेज करते हैं, और उच्च-वॉल्यूम
+            का काम — डेटा भेजना और फ़ोरकास्ट का अनुरोध करना — यहाँ डॉक्यूमेंट किए गए API के माध्यम से करते हैं।
+          </p>
+
+          <h2>एक पहली झलक</h2>
+          <p>observations भेजना और फ़ोरकास्ट माँगना इस तरह दिखता है:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code># 1. Send observations to a data source
+curl -X POST "https://api.temporis.co/v1/data_sources/ingest" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1716249600, "name": "orders", "value": 42 },
+      { "timestamp": 1716253200, "name": "orders", "value": 51 }
+    ]
+  }'
+
+# 2. Ask a data profile for the next steps
+curl -X POST "https://api.temporis.co/v1/predict" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+BASE = "https://api.temporis.co"
+headers = {"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"}
+
+# 1. Send observations to a data source
+requests.post(f"{BASE}/v1/data_sources/ingest", headers=headers, json={
+    "data_source": "store_metrics",
+    "records": [
+        {"timestamp": 1716249600, "name": "orders", "value": 42},
+        {"timestamp": 1716253200, "name": "orders", "value": 51},
+    ],
+}).raise_for_status()
+
+# 2. Ask a data profile for the next steps
+forecast = requests.post(f"{BASE}/v1/predict", headers=headers, json={
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9,
+}).json()
+
+print(forecast["predictions"][0]["data"])</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const BASE = "https://api.temporis.co";
+const headers = {
+  "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
+// 1. Send observations to a data source
+await fetch(`${BASE}/v1/data_sources/ingest`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1716249600, name: "orders", value: 42 },
+      { timestamp: 1716253200, name: "orders", value: 51 },
+    ],
+  }),
+});
+
+// 2. Ask a data profile for the next steps
+const res = await fetch(`${BASE}/v1/predict`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const forecast = await res.json();
+console.log(forecast.predictions[0].data);</code></pre></div>
+          </div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body">
+              <div class="callout-title">टाइम-सीरीज़ फ़ोरकास्टिंग में नए हैं?</div>
+              <p><a href="concepts/how-it-works.html">फ़ोरकास्टिंग कैसे काम करती है</a> से शुरुआत करें। यह API को छूने से पहले Temporis के पीछे के मानसिक मॉडल को समझाता है, और इसके बाद बाक़ी डॉक्स पढ़ने में आसान लगेंगे।</p>
+            </div>
+          </div>
+
+          <h2>आगे कहाँ जाएँ</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="concepts/data-sources.html">
+              <p class="doc-card-title">Data sources</p>
+              <p class="doc-card-desc">Temporis observations को कैसे संग्रहीत करता है और उन्हें अच्छी तरह कैसे भेजें।</p>
+            </a>
+            <a class="doc-card" href="concepts/data-profiles.html">
+              <p class="doc-card-title">Data profiles</p>
+              <p class="doc-card-desc">हर वह सेटिंग जो यह तय करती है कि आपका डेटा कैसे पढ़ा और फ़ोरकास्ट किया जाए।</p>
+            </a>
+            <a class="doc-card" href="concepts/predictions.html">
+              <p class="doc-card-title">Predictions और सैम्पलिंग</p>
+              <p class="doc-card-desc">फ़ोरकास्ट पढ़ना, और <code>count</code>, <code>temperature</code>, और <code>top_p</code> क्या करते हैं।</p>
+            </a>
+            <a class="doc-card" href="guides/prediction-samples.html">
+              <p class="doc-card-title">सैम्पल्स के साथ काम करना</p>
+              <p class="doc-card-desc">कई सैम्पल ट्रैजेक्टरीज़ को intervals और पॉइंट फ़ोरकास्ट में बदलें।</p>
+            </a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

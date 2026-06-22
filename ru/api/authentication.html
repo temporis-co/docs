@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Аутентификация — Temporis Docs</title>
+  <meta name="description" content="Создание, отправка и защита bearer-токенов, которые аутентифицируют каждый запрос к API Temporis.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Документация</a><span class="sep">/</span><span>Справочник по API</span><span class="sep">/</span><span>Аутентификация</span></nav>
+          <h1>Аутентификация</h1>
+          <p class="docs-lead">Каждый запрос к API Temporis аутентифицируется с помощью bearer-токена. Здесь описано, как его создать, отправить и обезопасить.</p>
+
+          <h2>Токены доступа</h2>
+          <p>Токены доступа создаются в панели управления, в разделе <a href="https://platform.temporis.co">Access Tokens</a>. Токен — это длинная случайная строка с префиксом <code>ts_</code>.</p>
+          <p>Полный токен показывается <strong>один раз</strong> — в момент его создания. Temporis хранит на сервере только его хеш, но не сам токен. Это означает, что утраченный токен невозможно восстановить: если вы его потеряли, удалите его и создайте новый.</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">Относитесь к токенам как к паролям</div><p>Любой, у кого есть один из ваших токенов, может загружать данные и запускать предсказания — а предсказания тарифицируются по вашему аккаунту. Берегите их соответствующим образом.</p></div>
+          </div>
+
+          <h2>Аутентификация запроса</h2>
+          <p>Отправляйте токен в заголовке <code>Authorization</code> в каждом запросе, используя схему <code>Bearer</code>:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>Во всех примерах этой документации токен читается из переменной окружения <code>TEMPORIS_TOKEN</code>, поэтому секрет никогда не появляется в исходном коде. Один раз экспортируйте его в своей оболочке:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>Затем добавьте его в виде заголовка:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>Когда аутентификация не удаётся</h2>
+          <p>Если заголовок <code>Authorization</code> отсутствует или имеет неверный формат либо токен неизвестен, API отвечает HTTP 401 и JSON-телом, описывающим, что пошло не так:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>Отсутствующий или некорректный заголовок вместо этого возвращает <code>{ "detail": "Missing access token." }</code>. Оба случая дают 401. Полный список ответов см. в разделе <a href="../api/errors.html">Ошибки и коды состояния</a>.</p>
+
+          <h2>Как обезопасить токены</h2>
+          <p>Несколько привычек помогут уберечь ваши токены от попадания в чужие руки:</p>
+          <ul>
+            <li><strong>Никогда не коммитьте токены в систему контроля версий</strong> и никогда не размещайте их в клиентском коде. Браузеры и мобильные приложения поставляют свой исходный код пользователям.</li>
+            <li><strong>Читайте токены из переменных окружения или менеджера секретов.</strong> Держите их подальше от логов, скриншотов и тикетов.</li>
+            <li><strong>Создавайте отдельный токен для каждого сервиса</strong>, чтобы можно было отозвать один, не нарушая работу остальных.</li>
+            <li><strong>Удалите токен в панели управления, чтобы отозвать его мгновенно.</strong> Удаление вступает в силу немедленно — следующий запрос с этим токеном получит 401.</li>
+          </ul>
+
+          <h2>Дальнейшие шаги</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Загрузка записей →</p><p class="doc-card-desc">Отправьте наблюдения в источник данных.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Создание предсказания →</p><p class="doc-card-desc">Получите выборочные варианты будущего из профиля данных.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Быстрый старт →</p><p class="doc-card-desc">Пройдите путь от токена до первого прогноза.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">На этой странице</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

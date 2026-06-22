@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preparar tus datos — Temporis Docs</title>
+  <meta name="description" content="Cómo introducir tu histórico de series temporales en Temporis con una forma limpia y consistente que el modelo pueda leer bien.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guías</span><span class="sep">/</span><span>Preparar tus datos</span></nav>
+          <h1>Preparar tus datos</h1>
+          <p class="docs-lead">Los buenos pronósticos comienzan con una entrada limpia y consistente. Esta guía explica cómo introducir tu histórico en Temporis con una forma que pueda leer bien.</p>
+
+          <h2>Usa segundos Unix, de forma consistente</h2>
+          <p>Cada marca de tiempo que envías es un recuento entero de <strong>segundos Unix</strong>: el número de segundos desde 1970-01-01 00:00:00 UTC. No milisegundos, ni una cadena de fecha ISO. Si tu sistema de origen te da milisegundos, divide entre 1000 antes de enviar.</p>
+          <p>Elige una única disciplina de zona horaria y no te desvíes nunca de ella. La regla más sencilla que siempre funciona: <strong>almacena todo en UTC</strong>. Los segundos Unix son intrínsecamente UTC, así que mientras conviertas cada marca de tiempo local a su instante UTC real antes de enviar, tu serie se mantiene internamente consistente. Mezclar valores en hora local y en UTC en la misma serie desplaza puntos de forma silenciosa y corrompe el patrón diario que el modelo aprende.</p>
+          <p>Tus marcas de tiempo no necesitan caer en números redondos. El <code>interval</code> de un perfil de datos encaja las observaciones en una rejilla regular: en el perfil <code>hourly_orders</code>, cada punto se agrupa en el cubo de la hora más cercana. Tú aportas el instante real en que ocurrió cada observación; el perfil se encarga del alineamiento.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Una conversión rápida</div><p>En Python, <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> te da los segundos Unix de un instante UTC explícito. Adjunta siempre una zona horaria para que la conversión no sea ambigua.</p></div>
+          </div>
+
+          <h2>Envía el histórico en lotes</h2>
+          <p>Rara vez tienes una sola observación que enviar: tienes meses o años de ellas. El endpoint de ingesta acepta muchos registros por petición, así que divide tu carga histórica en lotes de unos pocos miles de registros y publícalos en un bucle, en lugar de un registro a la vez.</p>
+          <p>La ingesta es <strong>idempotente</strong>. La clave de upsert es <code>(timestamp, name)</code>, así que reenviar un registro que ya enviaste simplemente lo sobrescribe con el mismo valor: una operación sin efecto. Eso significa que una carga histórica es segura de reejecutar: si un lote falla a medias o tu script se cae, basta con volver a iniciarlo. No crearás duplicados.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>Una ingesta exitosa devuelve <strong>HTTP 204 No Content</strong> con un cuerpo vacío, así que no hay nada que parsear: solo confirma el estado. Consulta la <a href="../api/ingest.html">referencia de ingesta</a> para ver la forma completa de la petición.</p>
+
+          <h2>Dale al modelo suficiente histórico</h2>
+          <p>Un perfil no puede servir predicciones hasta que esté <strong>listo</strong>: Temporis necesita suficiente histórico para calcular las estadísticas de normalización a través de las cuales lee tu serie. Y cada predicción necesita al menos <code>min_patches</code> de contexto reciente, o la petición devuelve <strong>409 "Not enough data for this data profile."</strong></p>
+          <p>La regla práctica: <strong>ante la duda, envía más histórico.</strong> Más histórico permite que un perfil esté listo, supera holgadamente <code>min_patches</code> y le da al modelo más ciclos estacionales de los que aprender. No hay penalización por enviar más de lo que usa la ventana de contexto: los puntos más antiguos que <code>num_patches</code> simplemente no se leen en el momento de la predicción.</p>
+          <p>Para entender qué significan <code>min_patches</code>, <code>num_patches</code> y "listo" y cómo se relacionan con tu <code>interval</code>, lee <a href="../concepts/data-profiles.html">Perfiles de datos</a>.</p>
+
+          <h2>Marcas de tiempo irregulares y huecos</h2>
+          <p>Los datos reales son caóticos. Un sensor se salta una lectura, un trabajo se ejecuta con unos minutos de retraso, una tienda cierra en un día festivo. No necesitas limpiar nada de esto a mano: el paso de remuestreo del perfil se encarga de ello.</p>
+          <p>El <code>interval</code> agrupa tus observaciones en una rejilla regular, lo que absorbe marcas de tiempo <em>ligeramente irregulares</em>: una lectura que llega a las 10:58 y otra a las 11:03 caen ambas en el cubo de las 11:00. Para los cubos <em>faltantes</em>, <code>fill_limit</code> establece cuántos cubos vacíos consecutivos rellenará Temporis hacia adelante antes de rendirse. Un hueco corto se salva; un hueco largo se deja como un agujero y esas filas se descartan en lugar de inventarse.</p>
+          <p>Si tu serie tiene tiempo muerto <em>recurrente</em> —horas en las que no puede pasar nada— no lo trates como datos faltantes en absoluto. Un <code>exclude_window</code> enmascara ese rango horario para que nunca distorsione la serie. Esa es una opción del perfil, tratada en <a href="../concepts/data-profiles.html">Perfiles de datos</a>.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Envías las observaciones en bruto tal como las tienes. Dónde caen, cómo se rellenan los huecos y qué tiempo muerto se ignora son decisiones que toma el perfil, no transformaciones que cocines dentro de los datos.</p></div>
+          </div>
+
+          <h2>Alinear múltiples series</h2>
+          <p>Un perfil puede leer varias series a la vez: un perfil multivariante que las pronostica de forma conjunta. Para que eso funcione bien, las series necesitan una <strong>línea de tiempo común</strong>: envía la observación de cada serie en el mismo conjunto de marcas de tiempo para que las filas se alineen tras la agrupación.</p>
+          <p>Puedes enviar varias series en una sola petición de ingesta: simplemente incluye un registro por serie en cada marca de tiempo. Aquí dos series, <code>orders</code> y <code>visitors</code>, comparten la misma línea de tiempo:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>Si una serie falta en una marca de tiempo donde otra está presente, ese cubo se rellena según <code>fill_limit</code> igual que cualquier otro hueco, así que unos pocos rezagados no romperán el alineamiento, pero obtendrás el pronóstico conjunto más limpio cuando las series avancen al mismo compás.</p>
+
+          <h2>Correcciones y recargas</h2>
+          <p>¿Encontraste un valor erróneo? ¿Reformulas un trimestre? No borras ni parcheas nada especial: simplemente reenvías el registro corregido. Como la clave de upsert es <code>(timestamp, name)</code>, enviar un nuevo <code>value</code> en una marca de tiempo+nombre existente <strong>sobrescribe</strong> el anterior.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Reejecutar no tiene efectos secundarios</div><p>Como cada ingesta es un upsert idempotente, una recarga corregida puede solaparse sin riesgo con datos que ya enviaste. Vuelve a publicar todo el rango afectado si es más fácil que calcular exactamente qué puntos cambiaron.</p></div>
+          </div>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Fuentes de datos →</p><p class="doc-card-desc">Cómo se organizan las filas almacenadas de (timestamp, name, value).</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfiles de datos →</p><p class="doc-card-desc">La receta que lee una fuente de datos: interval, patches, huecos.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajustar un perfil de datos →</p><p class="doc-card-desc">Adapta cada opción al ritmo de tus datos.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">En esta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

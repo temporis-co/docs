@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>العمل مع عينات التنبؤ — توثيق Temporis</title>
+  <meta name="description" content="حوّل المسارات المعيَّنة الكثيرة من /v1/predict إلى تنبؤ نقطي ونطاق ثقة.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>الأدلة</span><span class="sep">/</span><span>العمل مع العينات</span></nav>
+          <h1>العمل مع عينات التنبؤ</h1>
+          <p class="docs-lead">يُرجِع <code>/v1/predict</code> مسارات معيَّنة كثيرة. يحوّلها هذا الدليل إلى الأشياء التي تحتاجها فعلًا: تنبؤ نقطي ونطاق ثقة.</p>
+
+          <h2>لماذا مسارات كثيرة</h2>
+          <p>يولّد Temporis التنبؤات عبر التعيين — فهو يقرأ سجلك التاريخي ويرسم امتدادًا معقولًا، تمامًا كما يكمل نموذج لغوي نصًا. كل سحبة هي <strong>مستقبل واحد ممكن</strong>، لا المستقبل بعينه. اطلب عدد <code>count</code> سحبات وستحصل على عدد <code>count</code> من المسارات المستقلة في <code>predictions</code>.</p>
+          <p>الغاية من امتلاك العديد منها هي <strong>التشتت</strong>. حيث تتفق المسارات يكون النموذج واثقًا؛ وحيث تتباعد يكون المستقبل غير مؤكد فعلًا. ذلك التشتت هو تقديرك لعدم اليقين — ولهذا نادرًا ما تكون عينة واحدة هي ما تريده.</p>
+          <p>اضبط <code>count</code> عاليًا بما يكفي لتمييز ذلك التشتت. حفنة من السحبات تعطي صورة مهتزة وغير موثوقة؛ بينما نطاق يتراوح بين <strong>20 و100</strong> يميّز التوزيع جيدًا لأغلب السلاسل. المزيد أكثر سلاسة لكنه ليس مجانيًا.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">العدد يكلّف رموزًا</div><p>يُحتسب التنبؤ مقابل كل رمز نموذج، وكل مسار يولّد أفقًا كاملًا من الرموز. مضاعفة <code>count</code> تضاعف تقريبًا تكلفة الطلب. استخدم عينات كافية لرؤية التشتت بوضوح، ثم توقّف.</p></div>
+          </div>
+
+          <h2>تنبؤ نقطي</h2>
+          <p>لتقليص العينات إلى رقم واحد لكل طابع زمني مستقبلي، <strong>جمّع عبر المسارات عند كل خطوة زمنية</strong>. <strong>الوسيط</strong> خيار افتراضي جيد — فهو متين أمام المسار الشاذ العَرَضي؛ والمتوسط يفي بالغرض أيضًا إن فضّلته.</p>
+          <p>تتشارك صفوف <code>data</code> في كل تنبؤ الطوابع الزمنية نفسها بالترتيب نفسه، فيمكنك محاذاتها بالفهرس. هنا نطلب 50 عينة من ملف <code>hourly_orders</code> ونحسب تنبؤ <code>orders</code> بالوسيط لكل طابع زمني:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>نطاقات الثقة</h2>
+          <p>الوسيط يعطيك خطًا مركزيًا؛ والنطاق يعطيك المدى حوله. احسب <strong>الكميات لكل طابع زمني</strong> عبر العينات — المئينات العاشر والخمسون والتسعون خيار شائع. والنتيجة ثلاثة خطوط: حافة دنيا (p10)، والمركز (p50)، وحافة عليا (p90).</p>
+          <p>اقرأ النطاق على أنه "نحو 80% من المستقبلات المعيَّنة تقع بين p10 و p90 عند هذا الطابع الزمني." النطاق الضيق يعني أن النموذج واثق؛ والنطاق الذي يتسع كلما نظرت أبعد إلى الأمام هو النموذج وهو يخبرك بصدق أن المستقبل البعيد أقل تأكيدًا من المستقبل القريب.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>اختيار count و temperature و top_p عمليًا</h2>
+          <p>ثلاثة مقابض تشكّل العينات، ولكل منها وظيفة مختلفة:</p>
+          <ul>
+            <li><code>count</code> يتحكم في <strong>الدقة</strong> — كم بدقة يُعيَّن التشتت. لا يغيّر شكل التوزيع، بل وضوح رؤيتك له فقط.</li>
+            <li><code>temperature</code> (أكبر من 0) يتحكم في <strong>التشتت</strong> — القيم الأعلى تسحب مستقبلات أكثر تنوعًا وأوسع مدى؛ والقيم الأدنى تجمّع العينات قرب المسار الأرجح للنموذج. نحو <code>1.0</code> محايد.</li>
+            <li><code>top_p</code> (من 0 إلى 1) <strong>يقصّ الذيول</strong> — خفضه يقطع القيم القصوى غير المرجّحة، فتحصل على قفزات مفاجئة أقل؛ والقيمة <code>1.0</code> تُبقي التوزيع كاملًا.</li>
+          </ul>
+          <p>نقاط بداية معقولة، تبعًا لمدى تقلّب سلسلتك:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>طابع السلسلة</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>مستقرة، سلسة (طلب ثابت)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>نموذجية</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>متقلبة، حادة (الأسعار، حركة مرور متفجّرة)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>عامِل هذه كنقطة انطلاق. ارسم نطاقًا، وانظر هل هو ضيق جدًا بحيث لا يكون صادقًا أم واسع جدًا بحيث يكون عديم الفائدة، وعدّل <code>temperature</code> أولًا.</p>
+
+          <h2>الترتيب حسب الخسارة</h2>
+          <p>أحيانًا تريد مسارًا تمثيليًا واحدًا بدلًا من نطاق — لعرض توضيحي، أو فحص سلامة، أو سؤال سريع "كيف يبدو مستقبل نموذجي". كل مسار يحمل قيمة <code>loss</code>، و<strong>خسارة أقل تعني أن النموذج اعتبر ذلك المسار أكثر نموذجية</strong>. رتّب حسبها وخذ مقدمة القائمة:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>لتنبؤ فعلي، فضّل الوسيط ونطاقًا على أي مسار مفرد — فالمسار الأدنى خسارةً مستقبل واحد معقول، لا متوسط لها. الترتيب أكثر فائدة لانتقاء مثال نظيف أو تصفية القيم الشاذة.</p></div>
+          </div>
+
+          <h2>ذات صلة</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">التنبؤات →</p><p class="doc-card-desc">كيف يحوّل التعيين السجل التاريخي إلى تنبؤ احتمالي.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">واجهة التنبؤ البرمجية →</p><p class="doc-card-desc">المرجع الكامل للطلب والاستجابة.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">ضبط ملف بيانات →</p><p class="doc-card-desc">اضبط التنبؤ الأساسي بشكل صحيح قبل أن تعيّنه.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

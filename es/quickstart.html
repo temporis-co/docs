@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inicio rápido — Documentación de Temporis</title>
+  <meta name="description" content="Pasa de una cuenta nueva de Temporis a tu primer pronóstico: crea una clave, envía datos, construye un perfil de datos y llama al endpoint de predicción.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="quickstart" data-base="">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="index.html">Docs</a><span class="sep">/</span><span>Primeros pasos</span><span class="sep">/</span><span>Inicio rápido</span></nav>
+          <h1>Inicio rápido</h1>
+          <p class="docs-lead">
+            Esta guía te lleva de una cuenta nueva a tu primer pronóstico. Crearás
+            una clave de API, registrarás una fuente de datos, transmitirás algo de historial, construirás un perfil de datos
+            y llamarás al endpoint de predicción. Calcula unos cinco minutos.
+          </p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body">
+              <p><strong>Dos superficies, una plataforma.</strong> Configurarás las cosas en el <a href="https://platform.temporis.co">panel</a> (claves, fuentes de datos, perfiles de datos, facturación) y realizarás el trabajo de datos y predicción a través de la <strong>API</strong>. Esta página recorre ambos.</p>
+            </div>
+          </div>
+
+          <ol class="steps">
+            <li>
+              <h3>Crea un token de acceso</h3>
+              <p>
+                En el panel, abre <strong>Tokens de acceso</strong> y crea uno. El token
+                se muestra <em>una sola vez</em>: cópialo de inmediato. Tiene el aspecto <code>ts_…</code> y
+                autentica cada solicitud a la API.
+              </p>
+              <p>Guárdalo como una variable de entorno para que los ejemplos siguientes funcionen tal cual:</p>
+              <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+            </li>
+
+            <li>
+              <h3>Añade un método de pago</h3>
+              <p>
+                La predicción se cobra por token de uso, por lo que se requiere una tarjeta registrada antes de
+                que <code>/v1/predict</code> se ejecute. Añade una en <strong>Facturación</strong>.
+                Ingerir datos no requiere facturación: solo la predicción la requiere.
+              </p>
+            </li>
+
+            <li>
+              <h3>Crea una fuente de datos</h3>
+              <p>
+                En <strong>Fuentes de datos</strong>, crea una llamada <code>store_metrics</code>.
+                Los nombres deben empezar con una letra minúscula y contener únicamente letras minúsculas,
+                dígitos y guiones bajos. Una fuente de datos es un contenedor vacío hasta que le envías
+                datos.
+              </p>
+            </li>
+
+            <li>
+              <h3>Envía algo de historial</h3>
+              <p>
+                Cada registro es una tripleta <code>(timestamp, name, value)</code>. El
+                <code>timestamp</code> es una hora Unix en <strong>segundos</strong>, <code>name</code>
+                es la serie y <code>value</code> es el número. Aquí enviamos un puñado de
+                lecturas horarias de <code>orders</code>; en la práctica, enviarías todo el historial real
+                que tengas.
+              </p>
+              <div class="code-group">
+                <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST "https://api.temporis.co/v1/data_sources/ingest" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1716249600, "name": "orders", "value": 42 },
+      { "timestamp": 1716253200, "name": "orders", "value": 51 },
+      { "timestamp": 1716256800, "name": "orders", "value": 47 },
+      { "timestamp": 1716260400, "name": "orders", "value": 63 }
+    ]
+  }'</code></pre></div>
+                <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+headers = {"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"}
+
+resp = requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers=headers,
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1716249600, "name": "orders", "value": 42},
+            {"timestamp": 1716253200, "name": "orders", "value": 51},
+            {"timestamp": 1716256800, "name": "orders", "value": 47},
+            {"timestamp": 1716260400, "name": "orders", "value": 63},
+        ],
+    },
+)
+resp.raise_for_status()  # 204 No Content on success</code></pre></div>
+                <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const res = await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1716249600, name: "orders", value: 42 },
+      { timestamp: 1716253200, name: "orders", value: 51 },
+      { timestamp: 1716256800, name: "orders", value: 47 },
+      { timestamp: 1716260400, name: "orders", value: 63 },
+    ],
+  }),
+});
+if (!res.ok) throw new Error(`Ingest failed: ${res.status}`);</code></pre></div>
+                <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>body, _ := json.Marshal(map[string]any{
+	"data_source": "store_metrics",
+	"records": []map[string]any{
+		{"timestamp": 1716249600, "name": "orders", "value": 42},
+		{"timestamp": 1716253200, "name": "orders", "value": 51},
+		{"timestamp": 1716256800, "name": "orders", "value": 47},
+		{"timestamp": 1716260400, "name": "orders", "value": 63},
+	},
+})
+req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/data_sources/ingest", bytes.NewReader(body))
+req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+req.Header.Set("Content-Type", "application/json")
+
+resp, err := http.DefaultClient.Do(req)
+if err != nil {
+	panic(err)
+}
+defer resp.Body.Close() // 204 No Content on success</code></pre></div>
+                <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/data_sources/ingest");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_source" =&gt; "store_metrics",
+        "records" =&gt; [
+            ["timestamp" =&gt; 1716249600, "name" =&gt; "orders", "value" =&gt; 42],
+            ["timestamp" =&gt; 1716253200, "name" =&gt; "orders", "value" =&gt; 51],
+            ["timestamp" =&gt; 1716256800, "name" =&gt; "orders", "value" =&gt; 47],
+            ["timestamp" =&gt; 1716260400, "name" =&gt; "orders", "value" =&gt; 63],
+        ],
+    ]),
+]);
+curl_exec($ch);            // 204 No Content on success
+curl_close($ch);</code></pre></div>
+                <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>uri = URI("https://api.temporis.co/v1/data_sources/ingest")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_source: "store_metrics",
+  records: [
+    { timestamp: 1716249600, name: "orders", value: 42 },
+    { timestamp: 1716253200, name: "orders", value: 51 },
+    { timestamp: 1716256800, name: "orders", value: 47 },
+    { timestamp: 1716260400, name: "orders", value: 63 },
+  ],
+}.to_json
+
+Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+# =&gt; 204 No Content</code></pre></div>
+                <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>var body = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1716249600, "name": "orders", "value": 42 },
+        { "timestamp": 1716253200, "name": "orders", "value": 51 },
+        { "timestamp": 1716256800, "name": "orders", "value": 47 },
+        { "timestamp": 1716260400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/data_sources/ingest"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());  // 204 No Content</code></pre></div>
+                <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>var json = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1716249600, "name": "orders", "value": 42 },
+        { "timestamp": 1716253200, "name": "orders", "value": 51 },
+        { "timestamp": 1716256800, "name": "orders", "value": 47 },
+        { "timestamp": 1716260400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+await client.PostAsync("https://api.temporis.co/v1/data_sources/ingest", content);  // 204 No Content</code></pre></div>
+              </div>
+              <div class="callout tip">
+                <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+                <div class="callout-body">
+                  <p>Una ingesta exitosa devuelve <code>204 No Content</code>: un cuerpo vacío. Enviar el mismo <code>(timestamp, name)</code> de nuevo simplemente sobrescribe el valor, por lo que los reintentos y los rellenos son seguros. Consulta <a href="api/ingest.html">Ingerir registros</a> para conocer los detalles.</p>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <h3>Construye un perfil de datos</h3>
+              <p>
+                De vuelta en el panel, abre <strong>Perfiles de datos</strong> y crea uno llamado
+                <code>hourly_orders</code>. Apúntalo a la fuente de datos <code>store_metrics</code>,
+                selecciona la serie <code>orders</code> y establece el <strong>intervalo</strong> en
+                <code>3600</code> segundos (una hora). Los valores predeterminados para todo lo demás son un buen
+                punto de partida.
+              </p>
+              <p>
+                Un perfil necesita una base de historial antes de que Temporis pueda prepararlo para el servicio.
+                Una vez que tiene suficientes datos, el panel lo marca como <strong>listo</strong>. Hasta entonces,
+                las predicciones devuelven un error de "no listo": eso es lo esperado.
+              </p>
+            </li>
+
+            <li>
+              <h3>Genera un pronóstico</h3>
+              <p>
+                Ahora pídele al perfil lo que viene a continuación. <code>count</code> es cuántas trayectorias
+                futuras independientes dibujar; <code>temperature</code> y <code>top_p</code> controlan
+                qué tan arriesgado es el muestreo.
+              </p>
+              <div class="code-group">
+                <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST "https://api.temporis.co/v1/predict" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+                <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>forecast = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers=headers,
+    json={
+        "data_profile": "hourly_orders",
+        "count": 5,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+).json()
+
+best = min(forecast["predictions"], key=lambda p: p["loss"])
+for row in best["data"]:
+    print(row["timestamp"], row["orders"])</code></pre></div>
+                <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const res = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const forecast = await res.json();
+const best = forecast.predictions
+  .reduce((a, b) => (a.loss < b.loss ? a : b));
+console.table(best.data);</code></pre></div>
+                <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>body, _ := json.Marshal(map[string]any{
+	"data_profile": "hourly_orders",
+	"count":        5,
+	"temperature":  1.0,
+	"top_p":        0.9,
+})
+req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/predict", bytes.NewReader(body))
+req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+req.Header.Set("Content-Type", "application/json")
+
+resp, _ := http.DefaultClient.Do(req)
+defer resp.Body.Close()
+
+var forecast map[string]any
+json.NewDecoder(resp.Body).Decode(&amp;forecast)
+fmt.Println(forecast["predictions"])</code></pre></div>
+                <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/predict");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_profile" =&gt; "hourly_orders",
+        "count"        =&gt; 5,
+        "temperature"  =&gt; 1.0,
+        "top_p"        =&gt; 0.9,
+    ]),
+]);
+$forecast = json_decode(curl_exec($ch), true);
+curl_close($ch);</code></pre></div>
+                <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>uri = URI("https://api.temporis.co/v1/predict")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_profile: "hourly_orders",
+  count: 5,
+  temperature: 1.0,
+  top_p: 0.9,
+}.to_json
+
+res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+forecast = JSON.parse(res.body)</code></pre></div>
+                <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>var body = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/predict"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.body());</code></pre></div>
+                <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>var json = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+var response = await client.PostAsync("https://api.temporis.co/v1/predict", content);
+var forecast = await response.Content.ReadAsStringAsync();
+Console.WriteLine(forecast);</code></pre></div>
+              </div>
+
+              <p>La respuesta te da el origen del pronóstico y una trayectoria por muestra:</p>
+              <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f2c1a7e8b6d4f03a1c5e9d2b7f40a18",
+  "data_profile": "hourly_orders",
+  "predict_from": 1716260400,
+  "predictions": [
+    {
+      "loss": 0.83,
+      "data": [
+        { "timestamp": 1716264000, "orders": 58.2 },
+        { "timestamp": 1716267600, "orders": 61.9 },
+        { "timestamp": 1716271200, "orders": 49.4 }
+      ]
+    }
+    // ... four more sampled trajectories
+  ]
+}</code></pre></div>
+            </li>
+          </ol>
+
+          <h2>Qué acaba de pasar</h2>
+          <p>
+            Transmitiste observaciones a una <strong>fuente de datos</strong>, describiste cómo leerlas
+            con un <strong>perfil de datos</strong> y dibujaste cinco futuros posibles desde
+            <code>/v1/predict</code>. Cada predicción es una trayectoria completa; juntas forman
+            una imagen probabilística de lo que viene a continuación. Cuanto menor sea el
+            <code>loss</code> de una predicción, más típica consideró el modelo esa trayectoria.
+          </p>
+
+          <h2>Próximos pasos</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="concepts/how-it-works.html">
+              <p class="doc-card-title">Cómo funciona la predicción →</p>
+              <p class="doc-card-desc">Por qué dibujar muestras supera a una sola estimación, y qué ocurre bajo el capó.</p>
+            </a>
+            <a class="doc-card" href="concepts/data-profiles.html">
+              <p class="doc-card-title">Perfiles de datos →</p>
+              <p class="doc-card-desc">Ajusta el intervalo, la longitud del historial y la limpieza para adaptarlos a tus datos.</p>
+            </a>
+            <a class="doc-card" href="guides/prediction-samples.html">
+              <p class="doc-card-title">Trabajar con muestras →</p>
+              <p class="doc-card-desc">Convierte las trayectorias en un pronóstico puntual y una banda de confianza.</p>
+            </a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">En esta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

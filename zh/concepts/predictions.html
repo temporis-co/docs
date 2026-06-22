@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>预测与采样 — Temporis 文档</title>
+  <meta name="description" content="一次预测请求会返回多个可能的未来。了解如何读取响应，以及 count、temperature 和 top_p 如何塑造它。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>概念</span><span class="sep">/</span><span>预测与采样</span></nav>
+          <h1>预测与采样</h1>
+          <p class="docs-lead">一次预测请求会返回多个可能的未来，而不是一个。本页解释如何读取响应，以及采样控制项如何塑造它。关于确切的数据结构，参见<a href="../api/predict.html">predict 参考</a>。</p>
+
+          <h2>请求剖析</h2>
+          <p>你针对一个数据画像进行预测，而不是针对原始的数据源。数据画像已经知道要读取哪些序列以及如何编码它们，因此一次请求只需说明使用哪个数据画像以及如何采样。四个字段就涵盖了这些：</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">必填</span></div>
+              <p class="param-desc">你某个数据画像的名称，例如 <code>hourly_orders</code>——或者一个公开数据画像。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">必填</span></div>
+              <p class="param-desc">要抽取多少条独立的未来轨迹。至少为 1。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">必填</span></div>
+              <p class="param-desc">样本的分散程度。必须大于 0；大约 1.0 为中性。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">必填</span></div>
+              <p class="param-desc">核采样截断值，取值范围为 0 到 1。越低越能裁剪掉不太可能的尾部。</p>
+            </div>
+          </div>
+          <p>下面是一个针对 <code>hourly_orders</code> 数据画像、请求 20 条轨迹的请求：</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>完整参考——每个字段、状态码和错误消息——参见<a href="../api/predict.html">predict 端点参考</a>。</p>
+
+          <h2>读取响应</h2>
+          <p>一次成功的调用会返回 HTTP 200，包含四个顶层字段：</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">本次请求的十六进制标识符。请保留它，以备技术支持和你自己的日志使用。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">回显你所请求的数据画像。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">预测从其开始延续的、最后一个<em>已观测</em>时间戳的 Unix 秒数。每条轨迹都从这个点之后开始。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">每条采样轨迹对应一个条目（长度等于 <code>count</code>）。每个条目都带有一个 <code>loss</code> 和一个由预测行组成的 <code>data</code> 数组。</p>
+            </div>
+          </div>
+          <p>下面的示例展示了一次 <code>orders</code> 预测中的两条轨迹。该数据画像的 <code>interval</code> 为 3600，<code>patch_spacing</code> 为 2，因此各行以 <code>interval &times; patch_spacing</code> = 7200 秒（两小时）为步长递进：</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>每一行都有一个 <code>timestamp</code>，外加数据画像所读取的每条序列对应的一个字段——这里只有 <code>orders</code>。各时间戳以 <code>interval &times; patch_spacing</code> 秒为步长递进，所有轨迹的步长都相同，因此你可以逐行对齐这些样本。</p>
+
+          <h2>采样控制项</h2>
+          <p>有三个参数塑造你拿回的这组未来。它们在分辨率和多样性与成本和稳定性之间进行权衡。</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>参数</th><th>作用</th><th>典型值</th><th>何时调高 / 调低</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>抽取的独立轨迹数。样本越多，对分布的刻画越好。</td><td>20 到 100</td><td>需要更平滑的区间时调高；为降低 token 成本时调低。</td></tr>
+              <tr><td><code>temperature</code></td><td>样本的分散程度。越高越多样、越不确定；越低则越聚集在最可能的路径附近。</td><td>~1.0</td><td>当预测看起来过窄时调高；当它们不切实际地发散时调低。</td></tr>
+              <tr><td><code>top_p</code></td><td>核截断值。在采样前裁剪掉不太可能的尾部。</td><td>0.9 到 1.0</td><td>调低以抑制出人意料的跳变；调高至接近 1.0 以保留完整分布。</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">成本随 count 线性增长</div><p>每个样本都是独立生成的，并按模型使用的 token 计量，因此一个 <code>count</code> 为 100 的请求，成本大约是 <code>count</code> 为 20 的请求的五倍。请权衡你所需的分辨率与成本来选择 <code>count</code>。</p></div>
+          </div>
+
+          <h2>Loss：为轨迹排序</h2>
+          <p>每条预测都带有一个 <code>loss</code>。越低意味着模型认为该轨迹越典型——越符合它根据历史所做的预期。loss 较高的路径仍然是有效的样本；它们只是不那么居中而已。</p>
+          <p>用 <code>loss</code> 来挑选一条有代表性的轨迹，或在你汇总整组样本时作为权重。要抓取最典型的路径：</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>多变量预测</h2>
+          <p>如果一个数据画像读取多个序列名称，则每个预测行都会为每个 name 携带一个字段——这些序列是联合预测的，因此它们的值在同一行内保持一致。一个同时读取 <code>kw</code> 和 <code>price</code> 的数据画像会返回如下的行：</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>公开数据画像</h2>
+          <p>你可以针对 Temporis 维护的共享数据画像进行预测，无需自己做任何设置——只需把公开名称作为 <code>data_profile</code> 传入：</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>响应的形态完全相同；每行中的序列字段与该公开数据画像所读取的内容相匹配。</p>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">使用预测样本 →</p><p class="doc-card-desc">把一组轨迹转化为区间、中位数和决策。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict 参考 →</p><p class="doc-card-desc">完整的请求与响应数据结构，附带每个状态码。</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">配置那份决定每次预测读取什么的配方。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

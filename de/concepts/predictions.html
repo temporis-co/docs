@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prognosen &amp; Sampling — Temporis Docs</title>
+  <meta name="description" content="Eine Prognoseanfrage liefert mehrere mögliche Zukünfte zurück. Erfahren Sie, wie Sie die Antwort lesen und wie count, temperature und top_p sie formen.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Konzepte</span><span class="sep">/</span><span>Prognosen &amp; Sampling</span></nav>
+          <h1>Prognosen &amp; Sampling</h1>
+          <p class="docs-lead">Eine Prognoseanfrage liefert mehrere mögliche Zukünfte zurück, nicht nur eine. Diese Seite erklärt, wie Sie die Antwort lesen und wie die Sampling-Steuerungen sie formen. Das genaue Schema finden Sie in <a href="../api/predict.html">der Predict-Referenz</a>.</p>
+
+          <h2>Aufbau einer Anfrage</h2>
+          <p>Sie prognostizieren gegen ein Datenprofil, nicht gegen eine rohe Datenquelle. Das Profil weiß bereits, welche Reihen es lesen und wie es sie kodieren soll, sodass eine Anfrage nur angeben muss, welches Profil und wie gesampelt werden soll. Vier Felder decken das ab:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Der Name eines Ihrer Profile, etwa <code>hourly_orders</code> — oder ein öffentliches Profil.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Wie viele unabhängige Zukunftstrajektorien gezogen werden. Mindestens 1.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Wie stark die Samples gestreut sind. Muss größer als 0 sein; etwa 1.0 ist neutral.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">Erforderlich</span></div>
+              <p class="param-desc">Nucleus-Sampling-Grenzwert im Bereich von 0 bis 1. Niedriger schneidet den unwahrscheinlichen Rand ab.</p>
+            </div>
+          </div>
+          <p>Hier ist eine Anfrage für 20 Trajektorien gegen das Profil <code>hourly_orders</code>:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>Die vollständige Referenz — jedes Feld, jeder Statuscode und jede Fehlermeldung — finden Sie in <a href="../api/predict.html">der Referenz des Predict-Endpunkts</a>.</p>
+
+          <h2>Die Antwort lesen</h2>
+          <p>Ein erfolgreicher Aufruf gibt HTTP 200 mit vier Feldern auf oberster Ebene zurück:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">Ein Hex-Bezeichner für diese Anfrage. Bewahren Sie ihn für den Support und Ihre eigenen Logs auf.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">Gibt das angefragte Profil zurück.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Unix-Sekunden des letzten <em>beobachteten</em> Zeitstempels, ab dem die Prognose fortgesetzt wird. Jede Trajektorie beginnt unmittelbar nach diesem Punkt.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">Ein Eintrag pro gesampelter Trajektorie (Länge entspricht <code>count</code>). Jeder enthält ein <code>loss</code> und ein <code>data</code>-Array von Prognosezeilen.</p>
+            </div>
+          </div>
+          <p>Das Beispiel unten zeigt zwei der Trajektorien aus einer <code>orders</code>-Prognose. Das <code>interval</code> des Profils ist 3600 und sein <code>patch_spacing</code> ist 2, sodass die Zeilen um <code>interval &times; patch_spacing</code> = 7200 Sekunden (zwei Stunden) fortschreiten:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>Jede Zeile hat einen <code>timestamp</code> plus ein Feld pro Reihe, die das Profil liest — hier nur <code>orders</code>. Die Zeitstempel schreiten um <code>interval &times; patch_spacing</code> Sekunden fort, mit demselben Abstand für jede Trajektorie, sodass Sie Samples Zeile für Zeile ausrichten können.</p>
+
+          <h2>Die Sampling-Steuerungen</h2>
+          <p>Drei Parameter formen die Menge der Zukünfte, die Sie zurückerhalten. Sie wägen Auflösung und Vielfalt gegen Kosten und Stabilität ab.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Parameter</th><th>Was er bewirkt</th><th>Typischer Wert</th><th>Erhöhen / senken, wenn</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>Anzahl der unabhängig gezogenen Trajektorien. Mehr Samples bilden die Verteilung besser ab.</td><td>20 bis 100</td><td>Erhöhen für glattere Intervalle; senken, um Token-Kosten zu reduzieren.</td></tr>
+              <tr><td><code>temperature</code></td><td>Wie stark die Samples gestreut sind. Höher ist vielfältiger und unsicherer; niedriger clustert nahe am wahrscheinlichsten Pfad.</td><td>~1.0</td><td>Erhöhen, wenn Prognosen zu eng wirken; senken, wenn sie unrealistisch streuen.</td></tr>
+              <tr><td><code>top_p</code></td><td>Nucleus-Grenzwert. Schneidet den unwahrscheinlichen Rand vor dem Sampling ab.</td><td>0.9 bis 1.0</td><td>Senken, um überraschende Sprünge zu unterdrücken; in Richtung 1.0 erhöhen, um die vollständige Verteilung zu behalten.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Kosten skalieren mit count</div><p>Jedes Sample wird unabhängig generiert und pro Token der Modellnutzung abgerechnet, sodass eine Anfrage mit <code>count</code> 100 etwa fünfmal so viel kostet wie eine mit <code>count</code> 20. Wählen Sie <code>count</code> so, dass die benötigte Auflösung gegen die Kosten abgewogen wird.</p></div>
+          </div>
+
+          <h2>Loss: Trajektorien einordnen</h2>
+          <p>Jede Prognose enthält ein <code>loss</code>. Niedriger bedeutet, dass das Modell diese Trajektorie als typischer ansah — eher im Einklang mit dem, was es angesichts der Historie erwartete. Pfade mit höherem Loss sind weiterhin gültige Samples; sie sind nur weniger zentral.</p>
+          <p>Nutzen Sie <code>loss</code>, um eine einzelne repräsentative Trajektorie auszuwählen, oder als Gewicht, wenn Sie die Menge zusammenfassen. Um den typischsten Pfad zu greifen:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>Multivariate Prognosen</h2>
+          <p>Wenn ein Profil mehrere Reihennamen liest, enthält jede Prognosezeile ein Feld pro Name — die Reihen werden gemeinsam vorhergesagt, sodass ihre Werte innerhalb einer Zeile konsistent bleiben. Ein Profil, das <code>kw</code> und <code>price</code> gemeinsam liest, gibt Zeilen wie diese zurück:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>Öffentliche Datenprofile</h2>
+          <p>Sie können gegen gemeinsam genutzte Profile prognostizieren, die Temporis pflegt, ganz ohne eigene Einrichtung — übergeben Sie einfach den öffentlichen Namen als <code>data_profile</code>:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>Die Form der Antwort ist identisch; die Reihenfelder in jeder Zeile entsprechen dem, was das öffentliche Profil liest.</p>
+
+          <h2>Verwandt</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Mit Prognose-Samples arbeiten →</p><p class="doc-card-desc">Aus einer Menge von Trajektorien Intervalle, Mediane und Entscheidungen ableiten.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict-Referenz →</p><p class="doc-card-desc">Das vollständige Anfrage- und Antwortschema, mit jedem Statuscode.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Datenprofile →</p><p class="doc-card-desc">Konfigurieren Sie das Rezept, das bestimmt, was jede Prognose liest.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

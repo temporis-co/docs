@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profils de données — Documentation Temporis</title>
+  <meta name="description" content="Un profil de données est la recette qui indique à Temporis comment lire une source de données : quelles séries, à quelle cadence, quelle quantité d'historique et comment la nettoyer.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Profils de données</span></nav>
+          <h1>Profils de données</h1>
+          <p class="docs-lead">Un profil de données est la recette qui indique à Temporis comment lire une source de données : quelles séries, à quelle cadence, quelle quantité d'historique et comment la nettoyer. C'est ce contre quoi vous établissez vos prévisions.</p>
+
+          <h2>Ce que définit un profil</h2>
+          <p>Une <a href="data-sources.html">source de données</a> contient des lignes brutes. Un profil transforme ces lignes en un signal propre et régulièrement espacé que le modèle peut lire — en choisissant les séries, en alignant les observations sur une grille temporelle, en décidant de la quantité d'historique à utiliser et en comblant les lacunes. Lorsque vous appelez <a href="../api/predict.html">predict</a>, vous nommez un profil, pas une source.</p>
+
+          <p>Vous créez et modifiez les profils dans le tableau de bord. L'exemple ici est <code>hourly_orders</code> : il lit la série <code>orders</code> de <code>store_metrics</code> sur une grille d'une heure (<code>interval</code> 3600).</p>
+
+          <h2>Sélectionner les données</h2>
+          <h3>Source et séries</h3>
+          <p>Deux réglages choisissent ce que le profil lit :</p>
+          <ul>
+            <li><code>data_source</code> — la source de données à lire.</li>
+            <li><code>names</code> — un ou plusieurs noms de séries au sein de cette source.</li>
+          </ul>
+          <p>Indiquer un seul nom donne une prévision univariée. En indiquer plusieurs — par exemple <code>orders</code> et <code>visitors</code> — rend le profil <strong>multivarié</strong> : les séries sont prévues conjointement, de sorte que le modèle peut exploiter la relation entre elles.</p>
+
+          <h2>La grille temporelle</h2>
+          <p>Les observations réelles arrivent rarement à une cadence parfaitement régulière, donc un profil les rééchantillonne sur une grille régulière.</p>
+
+          <p><code>interval</code> est la taille de chaque seau de la grille en secondes. Avec <code>interval</code> 3600, les observations sont alignées dans des seaux horaires. La grille est ancrée sur votre observation la <strong>plus récente</strong> et recule pas à pas à partir de là, de sorte que les données les plus récentes retombent toujours proprement sur la grille.</p>
+
+          <p>Le modèle ne lit pas chaque point un à un. Il travaille par <em>patches</em> — des fragments de taille fixe de la série :</p>
+          <ul>
+            <li><code>patch_len</code> — combien de points composent un patch.</li>
+            <li><code>patch_spacing</code> — le pas entre les points qu'il utilise, une forme de sous-échantillonnage.</li>
+            <li><code>num_patches</code> — le nombre maximal de patches d'historique qu'il utilisera comme contexte.</li>
+            <li><code>min_patches</code> — le nombre minimal de patches d'historique requis pour servir une prédiction.</li>
+          </ul>
+
+          <p>Intuitivement : le contexte que voit le modèle est à peu près <code>num_patches</code> patches d'historique récent. Si un profil dispose de moins de <code>min_patches</code> patches, il ne peut pas servir et vous obtenez <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>L'espacement définit aussi la résolution de votre prévision. Le pas effectif entre les points de prévision est <code>interval × patch_spacing</code> secondes. Avec <code>interval</code> 3600 et <code>patch_spacing</code> 1, les prédictions retombent à une heure d'intervalle.</p>
+
+          <h2>Nettoyer la série</h2>
+          <p>Après le rééchantillonnage, certains seaux peuvent ne contenir aucune observation. Deux réglages décident de la manière dont cela est traité :</p>
+          <ul>
+            <li><code>fill_limit</code> — la plus longue suite de seaux vides consécutifs qui sera remplie par propagation avant (en reportant la dernière valeur connue). Une lacune plus longue que cela est considérée comme réellement manquante et ces lignes sont supprimées à la place.</li>
+            <li><code>exclude_window</code> — une plage horaire récurrente à masquer, donnée sous la forme d'un fuseau horaire plus une heure de début et de fin. Utilisez-la pour les temps morts que vous anticipez, comme les heures nocturnes où un marché est fermé, afin que cette période calme ne déforme pas la série.</li>
+          </ul>
+
+          <h2>Niveaux vs. croissance</h2>
+          <p>Certaines séries se modélisent mieux par leur <em>niveau</em> ; d'autres par leur <em>variation relative</em>. Le réglage <code>use_diffs</code> (la transformation log-diff) fait travailler le modèle sur la croissance logarithmique — la variation proportionnelle d'un pas au suivant — plutôt que sur la valeur brute.</p>
+
+          <p>Activez-le pour les séries qui évoluent de manière multiplicative ou suivent fortement une tendance sur une large plage : chiffre d'affaires, prix, tout ce où une variation de 10 % compte plus qu'une variation absolue. Laissez-le désactivé pour les séries qui se situent dans une plage bornée et à peu près stationnaire, où le niveau brut est déjà la chose naturelle à prédire.</p>
+
+          <h2>Disponibilité</h2>
+          <p>Un profil n'est pas utilisable à l'instant où vous le créez. Temporis calcule d'abord des statistiques de normalisation — en apprenant la dispersion typique de vos données afin de pouvoir mettre les valeurs à l'échelle de la plage attendue par le modèle. Tant qu'il n'a pas assez de données pour le faire, le profil n'est pas prêt, et le tableau de bord affiche son état de disponibilité.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Prédire contre un profil qui n'est pas prêt renvoie <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> Attendez que le tableau de bord signale le profil comme prêt, puis appelez predict.</p></div>
+          </div>
+
+          <h2>Référence des réglages</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Réglage</th><th>Ce qu'il contrôle</th><th>Exemple</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>La source de données que lit le profil.</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>Séries à lire ; plusieurs noms sont prévus conjointement (multivarié).</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>Seau de rééchantillonnage en secondes ; grille ancrée sur l'observation la plus récente.</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>Nombre de points dans un patch — le fragment que le modèle lit et écrit à la fois.</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>Pas entre les points utilisés ; le pas de prévision est <code>interval × patch_spacing</code> secondes.</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>Nombre maximal de patches d'historique utilisés comme contexte.</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>Nombre minimal de patches requis pour servir ; en deçà, 409 "Not enough data".</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>Plus longue suite de seaux vides à remplir par propagation avant ; les lacunes plus longues suppriment les lignes.</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>Modéliser la variation relative (croissance logarithmique) au lieu du niveau brut.</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>Plage horaire récurrente à masquer (fuseau horaire + début + fin).</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Vous ne savez pas quelles valeurs choisir ? <a href="../guides/tuning-profile.html">Ajuster un profil</a> détaille le choix de <code>interval</code>, de la longueur d'historique et des réglages de nettoyage pour vos données.</p></div>
+          </div>
+
+          <h2>Étapes suivantes</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajuster un profil →</p><p class="doc-card-desc">Comment choisir de bonnes valeurs pour chaque réglage.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prédictions →</p><p class="doc-card-desc">Ce que vous obtenez en retour lorsque vous établissez une prévision contre un profil.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">API Predict →</p><p class="doc-card-desc">La référence complète du point de terminaison predict.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Sur cette page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

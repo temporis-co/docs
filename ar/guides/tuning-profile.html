@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ضبط ملف بيانات — توثيق Temporis</title>
+  <meta name="description" content="اختر إعدادات الفاصل والرقعة والسجل التاريخي والفجوات التي تطابق إيقاع بياناتك للحصول على تنبؤات أفضل بشكل ملحوظ.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>الأدلة</span><span class="sep">/</span><span>ضبط ملف بيانات</span></nav>
+          <h1>ضبط ملف بيانات</h1>
+          <p class="docs-lead">الإعدادات الافتراضية تعمل، لكن مطابقة الملف مع إيقاع بياناتك تجعل التنبؤات أفضل بشكل ملحوظ. إليك كيفية اختيار كل إعداد. (الإعدادات معرّفة في <a href="../concepts/data-profiles.html">ملفات البيانات</a>.)</p>
+
+          <h2>طابِق الفاصل مع وتيرتك</h2>
+          <p>أهم إعداد على الإطلاق هو <code>interval</code> — الخانة، بالثواني، التي تُعاد معاينة ملاحظاتك عليها. اضبطه على <strong>فترة المعاينة الحقيقية</strong> لبياناتك. إذا سجّلت الطلبات مرة كل ساعة، فاستخدم <code>3600</code>. وإذا كان لديك رقم واحد في اليوم، فاستخدم <code>86400</code>.</p>
+          <p>إن أخطأت في هذا في أي من الاتجاهين، يعاني النموذج:</p>
+          <ul>
+            <li><strong>دقيق أكثر من اللازم</strong> — فاصل أقصر من وتيرتك الحقيقية يحشو السلسلة بخانات مملوءة، فيستهلك نافذة السياق على الضجيج والفراغ بدلًا من الإشارة.</li>
+            <li><strong>خشن أكثر من اللازم</strong> — فاصل أطول من وتيرتك يلاشي البنية الحقيقية بالتوسيط. فنمط طلب بمعدل ساعي يختفي ببساطة إذا قسّمته إلى خانات يومية.</li>
+          </ul>
+          <p>يستخدم ملف <code>hourly_orders</code> القيمة <code>interval: 3600</code> لأن <code>store_metrics</code> يسجّل رقم طلبات واحدًا في الساعة. ابدأ بمطابقة الفترة التي تصل عندها بياناتك فعليًا.</p>
+
+          <h2>كم من السجل التاريخي: num_patches و min_patches</h2>
+          <p>يتحكم هذان الإعدادان في <em>أكبر</em> و<em>أقل</em> قدر من السجل التاريخي المشمول في تنبؤ ما.</p>
+          <p><code>num_patches</code> هو نافذة السياق: الحد الأقصى لعدد رقع السجل التاريخي الحديث التي يقرؤها النموذج. مزيد من الرقع يعني مزيدًا من الدورات الماضية في المشهد، فمزيد من الموسمية التي يستطيع النموذج التقاطها — ارفعه حين تريده أن "يرى" البنية الأسبوعية أو السنوية. غير أن المكاسب تتضاءل؛ فبعد حد معين تكون تُغذّي سجلًا تاريخيًا قديمًا لم يعد يعكس الحاضر، بمزيد من الرموز ودون تحسّن في التنبؤ.</p>
+          <p><code>min_patches</code> هو الحد الأدنى: أدنى سجل تاريخي يتطلبه الملف قبل أن يقدّم خدمته أصلًا. دونه، يُرجِع طلب التنبؤ <strong>409 "Not enough data for this data profile."</strong> ارفع <code>min_patches</code> حين تفضّل <em>أن ترفض</em> تنبؤًا منخفض الثقة على أن تُرجِع تنبؤًا مبنيًا على حفنة من النقاط — وهو مفيد لسلسلة جديدة تمامًا حيث يكون التخمين المبكر مضلِّلًا.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>فكّر فيه كنطاق: <code>min_patches</code> هو "لا تحاول حتى دون هذا الحد"، و<code>num_patches</code> هو "توقّف عن النظر إلى الوراء بعد هذا الحد".</p></div>
+          </div>
+
+          <h2>الدقة مقابل الأفق: patch_len و patch_spacing</h2>
+          <p>الرقعة هي كتلة النقاط التي يقرؤها النموذج ويكتبها في المرة الواحدة. تحدد <code>patch_len</code> كم نقطة في تلك الكتلة. وتحدد <code>patch_spacing</code> الخطوة بين النقاط التي تستخدمها فعليًا — فهي تخفّض معاينة السلسلة، وبفعل ذلك تمدّد المدى الذي تصل إليه كل خطوة مولَّدة إلى الأمام.</p>
+          <p>العلاقة الأساسية: <strong>الخطوة الزمنية الفعلية</strong> بين نقاط التنبؤ هي <code>interval * patch_spacing</code> ثانية. مع <code>interval: 3600</code> و<code>patch_spacing: 1</code>، تكون كل خطوة ساعة واحدة. ارفع <code>patch_spacing</code> إلى <code>3</code> وتغطي كل خطوة ثلاث ساعات — فالعدد نفسه من النقاط المولَّدة يصل الآن إلى ثلاثة أضعاف المسافة في المستقبل، بدقة أخشن.</p>
+          <p>إذن هذه مفاضلة بين <strong>التفصيل والمدى</strong>. أبقِ الخطوة ضيقة حين تحتاج تنبؤات قريبة المدى عالية التفصيل؛ ووسّعها حين تهتم بأفق أطول وتستطيع قبول خطوة أخشن.</p>
+
+          <h2>المستويات مقابل النمو: use_diffs</h2>
+          <p>تخبر <code>use_diffs</code> (تحويل فرق اللوغاريتم) النموذج بأن يعمل على <em>التغير النسبي</em> — النمو اللوغاريتمي من نقطة إلى نقطة — بدلًا من المستوى الخام.</p>
+          <ul>
+            <li><strong>فعّلها</strong> للسلاسل التي تنمو أو تتراكم بشكل ضربي: الإيرادات، والأسعار، وأعداد المستخدمين، وأي شيء له اتجاه أو "يتضاعف" بدلًا من أن "يضيف". نمذجة النمو تمنع سلسلة صاعدة من أن تُربَط بحيث كانت سابقًا.</li>
+            <li><strong>اتركها مطفأة</strong> للمستويات المحدودة أو الثابتة التي تحوم في نطاق ثابت: نسبة الاستخدام، ودرجة الحرارة، ومعدل التشبّع. هذه لها مستوى طبيعي تعود إليه، وأخذ فروقها لا يضيف إلا ضجيجًا.</li>
+          </ul>
+          <p>اختبار سريع: إذا كان مضاعفة وحدات سلسلتك ينبغي أن يضاعف قفزاتها المعتادة، فهي ضربية — فعّل <code>use_diffs</code>.</p>
+
+          <h2>إخفاء الوقت الميت: نوافذ الاستبعاد</h2>
+          <p>بعض السلاسل لها فترات متكررة لا يحدث فيها شيء بحكم التصميم — سوق يُغلق ليلًا، أو متجر خارج ساعات العمل. إذا تركت ذلك الوقت الميت، عامَل النموذج تلك الفترات المسطحة أو الصفرية كإشارة حقيقية وتعلّم نمطًا غير موجود.</p>
+          <p>تُخفي <code>exclude_window</code> (منطقة زمنية إضافة إلى وقت بداية ووقت توقف من أوقات اليوم) ذلك النطاق المتكرر بحيث يُسقَط من السلسلة التي يقرؤها النموذج. اضبط واحدة للساعات التي تكون فيها سلسلتك خاملة بنيويًا — مثلًا، إخفاء الفترة الليلية في ملف يقرأ أسعار السوق — بحيث يبقى سلوك ساعات العمل نظيفًا.</p>
+
+          <h2>التساهل مع الفجوات: fill_limit</h2>
+          <p><code>fill_limit</code> هو أطول سلسلة من الخانات المفقودة المتتالية التي سيملؤها Temporis للأمام. الفجوة الأقصر من الحد تُجسَّر بحمل القيمة الأخيرة للأمام؛ والفجوة الأطول من الحد تُترك ثقبًا، وتُسقَط تلك الصفوف.</p>
+          <ul>
+            <li><strong>ارفعه</strong> لتجسير انقطاعات أطول — مستشعر يخرج عن الخدمة أحيانًا لفترة، حيث يكون حمل القراءة الأخيرة للأمام معقولًا.</li>
+            <li><strong>اخفضه</strong> حين تفضّل ألا تختلق بيانات عبر ثقوب كبيرة — حين تعني فجوة طويلة فعلًا "مجهول" ويكون خط مسطح محمول للأمام مضلِّلًا.</li>
+          </ul>
+
+          <h2>استكشاف الأخطاء وإصلاحها</h2>
+          <div class="table-wrap"><table><thead><tr><th>العَرَض</th><th>السبب المرجّح</th><th>جرّب</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>نقاط قليلة جدًا، أو <code>min_patches</code> مضبوط عاليًا جدًا</td><td>أدخِل مزيدًا من السجل التاريخي، أو اخفض <code>min_patches</code></td></tr>
+            <tr><td>التنبؤات تتجاهل النمط اليومي</td><td><code>interval</code> خشن جدًا، أو السياق قصير جدًا</td><td>طابِق <code>interval</code> مع وتيرتك؛ ارفع <code>num_patches</code></td></tr>
+            <tr><td>التنبؤات تتجاوز الهدف في سلسلة ذات اتجاه</td><td>نمذجة المستويات الخام بدلًا من النمو</td><td>فعّل <code>use_diffs</code></td></tr>
+            <tr><td>قيم غريبة عبر فترة إغلاق معروفة</td><td>الوقت الميت مشمول في السلسلة</td><td>اضبط <code>exclude_window</code> لذلك النطاق</td></tr>
+            <tr><td>صفوف مُسقَطة / السلسلة تبدو متناثرة</td><td>الفجوات تتجاوز <code>fill_limit</code></td><td>ارفع <code>fill_limit</code>، أو كثّف البيانات التي ترسلها</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>غيّر إعدادًا واحدًا في كل مرة وقارن التنبؤات. الضبط أسهل في الاستدلال عليه حين يكون لكل تعديل أثر مرئي ومعزول.</p></div>
+          </div>
+
+          <h2>ذات صلة</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">ملفات البيانات →</p><p class="doc-card-desc">التعريف الكامل لكل إعداد في هذا الدليل.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">العمل مع العينات →</p><p class="doc-card-desc">حوّل المسارات المعيَّنة إلى تنبؤات نقطية ونطاقات.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">التنبؤات →</p><p class="doc-card-desc">كيف ينتج التعيين تنبؤًا احتماليًا.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

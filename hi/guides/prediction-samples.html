@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>prediction samples के साथ काम करना — Temporis Docs</title>
+  <meta name="description" content="/v1/predict से मिलने वाले अनेक sampled प्रक्षेपपथों को एक point forecast और एक confidence band में बदलें।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guides</span><span class="sep">/</span><span>samples के साथ काम करना</span></nav>
+          <h1>prediction samples के साथ काम करना</h1>
+          <p class="docs-lead"><code>/v1/predict</code> अनेक sampled प्रक्षेपपथ लौटाता है। यह गाइड उन्हें उन चीज़ों में बदलती है जिनकी आपको वास्तव में ज़रूरत है: एक point forecast और एक confidence band।</p>
+
+          <h2>अनेक प्रक्षेपपथ क्यों</h2>
+          <p>Temporis sampling द्वारा पूर्वानुमान उत्पन्न करता है — यह आपका इतिहास पढ़ता है और एक प्रशंसनीय निरंतरता खींचता है, ठीक वैसे ही जैसे एक भाषा मॉडल पाठ को आगे बढ़ाता है। प्रत्येक draw <strong>एक संभावित भविष्य</strong> है, न कि वह भविष्य। <code>count</code> draws माँगें और आपको <code>predictions</code> में <code>count</code> स्वतंत्र प्रक्षेपपथ मिलते हैं।</p>
+          <p>अनेक होने का मतलब है <strong>फैलाव</strong>। जहाँ प्रक्षेपपथ सहमत होते हैं, वहाँ मॉडल आश्वस्त है; जहाँ वे पंखे की तरह फैलते हैं, वहाँ भविष्य वास्तव में अनिश्चित है। वह फैलाव आपका अनिश्चितता आकलन है — इसीलिए एक अकेला sample शायद ही कभी वह होता है जो आप चाहते हैं।</p>
+          <p><code>count</code> को उस फैलाव को सुलझाने के लिए पर्याप्त ऊँचा सेट करें। मुट्ठी भर draws एक झटकेदार, अविश्वसनीय तस्वीर देते हैं; <strong>20 से 100</strong> की सीमा में कहीं अधिकांश series के लिए वितरण को अच्छी तरह सुलझा देता है। अधिक अधिक चिकना होता है पर मुफ़्त नहीं।</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Count tokens में खर्च होता है</div><p>पूर्वानुमान प्रति मॉडल token मीटर किया जाता है, और प्रत्येक प्रक्षेपपथ tokens का एक पूरा क्षितिज उत्पन्न करता है। <code>count</code> को दोगुना करने से कॉल की लागत लगभग दोगुनी हो जाती है। फैलाव को साफ़ देखने के लिए पर्याप्त samples का उपयोग करें, फिर रुक जाएँ।</p></div>
+          </div>
+
+          <h2>एक point forecast</h2>
+          <p>samples को प्रति भविष्य timestamp एक संख्या में समेटने के लिए, <strong>प्रत्येक timestep पर प्रक्षेपपथों के आर-पार समुच्चय करें</strong>। <strong>median</strong> एक अच्छा डिफ़ॉल्ट है — यह कभी-कभार के जंगली प्रक्षेपपथ के प्रति मज़बूत है; अगर आप पसंद करें तो mean भी काम करता है।</p>
+          <p>प्रत्येक prediction की <code>data</code> पंक्तियाँ समान timestamps को समान क्रम में साझा करती हैं, इसलिए आप उन्हें index से पंक्तिबद्ध कर सकते हैं। यहाँ हम <code>hourly_orders</code> profile से 50 samples माँगते हैं और प्रति timestamp एक median <code>orders</code> forecast गणना करते हैं:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>Confidence bands</h2>
+          <p>median आपको एक केंद्र रेखा देता है; एक band आपको उसके चारों ओर की सीमा देता है। samples के आर-पार <strong>प्रति-timestamp quantiles</strong> गणना करें — 10वाँ, 50वाँ, और 90वाँ पर्सेंटाइल एक आम विकल्प हैं। परिणाम तीन रेखाएँ हैं: एक निचला किनारा (p10), केंद्र (p50), और एक ऊपरी किनारा (p90)।</p>
+          <p>band को इस तरह पढ़ें "इस timestamp पर लगभग 80% sampled भविष्य p10 और p90 के बीच आते हैं।" एक संकरा band मतलब मॉडल आश्वस्त है; एक band जो आगे देखने पर चौड़ा होता जाता है, वह मॉडल का ईमानदारी से आपको यह बताना है कि दूर का भविष्य निकट के भविष्य से कम निश्चित है।</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>व्यवहार में count, temperature, top_p चुनना</h2>
+          <p>तीन घुंडियाँ samples को आकार देती हैं, और वे अलग-अलग काम करती हैं:</p>
+          <ul>
+            <li><code>count</code> <strong>विभेदन</strong> को नियंत्रित करता है — फैलाव को कितनी बारीकी से sample किया जाता है। यह वितरण के आकार को नहीं बदलता, केवल इतना कि आप उसे कितना साफ़ देखते हैं।</li>
+            <li><code>temperature</code> (0 से अधिक) <strong>फैलाव</strong> को नियंत्रित करता है — ऊँचे मान अधिक विविध, अधिक विस्तृत-सीमा वाले भविष्य खींचते हैं; निचले मान samples को मॉडल के सबसे-संभावित पथ के पास संकेंद्रित करते हैं। लगभग <code>1.0</code> तटस्थ है।</li>
+            <li><code>top_p</code> (0 से 1) <strong>पूँछों को काटता है</strong> — इसे घटाने से असंभाव्य चरम कट जाते हैं, इसलिए आपको कम चौंकाने वाली छलांगें मिलती हैं; <code>1.0</code> पूरे वितरण को रखता है।</li>
+          </ul>
+          <p>समझदार शुरुआती बिंदु, इस पर निर्भर कि आपकी series कितनी झटकेदार है:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>series का स्वभाव</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>स्थिर, चिकनी (एकसमान माँग)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>सामान्य</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>अस्थिर, नुकीली (कीमतें, झटकेदार ट्रैफ़िक)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>इन्हें शुरुआत की जगह मानें। एक band खींचें, देखें कि क्या यह ईमानदार होने के लिए बहुत कसा हुआ है या इतना चौड़ा है कि बेकार है, और सबसे पहले <code>temperature</code> को समायोजित करें।</p>
+
+          <h2>loss के अनुसार रैंकिंग</h2>
+          <p>कभी-कभी आप एक band के बजाय एक अकेला प्रतिनिधि पथ चाहते हैं — किसी डेमो, किसी समझदारी जाँच, या एक त्वरित "एक सामान्य भविष्य कैसा दिखता है" के लिए। प्रत्येक प्रक्षेपपथ एक <code>loss</code> रखता है, और <strong>कम loss का मतलब है कि मॉडल ने उस पथ को अधिक सामान्य माना</strong>। उसके अनुसार छाँटें और सूची के सामने वाले हिस्से को लें:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>एक वास्तविक पूर्वानुमान के लिए, किसी एक अकेले प्रक्षेपपथ के बजाय median और एक band को प्राथमिकता दें — सबसे-कम-loss वाला पथ एक संभावित भविष्य है, उनका औसत नहीं। रैंकिंग एक साफ़ उदाहरण चुनने या outliers को छानने के लिए सबसे उपयोगी है।</p></div>
+          </div>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions →</p><p class="doc-card-desc">sampling कैसे इतिहास को एक प्रायिकता-आधारित पूर्वानुमान में बदलती है।</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">पूरा अनुरोध और प्रतिक्रिया reference।</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">एक data profile को ट्यून करना →</p><p class="doc-card-desc">sample करने से पहले अंतर्निहित पूर्वानुमान को सही करें।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पृष्ठ पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

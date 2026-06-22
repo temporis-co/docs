@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prédictions &amp; échantillonnage — Documentation Temporis</title>
+  <meta name="description" content="Une requête de prédiction renvoie plusieurs futurs possibles. Découvrez comment lire la réponse et comment count, temperature et top_p la façonnent.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Prédictions &amp; échantillonnage</span></nav>
+          <h1>Prédictions &amp; échantillonnage</h1>
+          <p class="docs-lead">Une requête de prédiction renvoie plusieurs futurs possibles plutôt qu'un seul. Cette page explique comment lire la réponse et comment les contrôles d'échantillonnage la façonnent. Pour le schéma exact, consultez <a href="../api/predict.html">la référence predict</a>.</p>
+
+          <h2>Anatomie d'une requête</h2>
+          <p>Vous établissez une prédiction contre un profil de données, pas contre une source de données brute. Le profil sait déjà quelles séries lire et comment les encoder, donc une requête n'a qu'à indiquer quel profil et comment échantillonner. Quatre champs suffisent :</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">Requis</span></div>
+              <p class="param-desc">Le nom de l'un de vos profils, tel que <code>hourly_orders</code> — ou un profil public.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">Requis</span></div>
+              <p class="param-desc">Combien de trajectoires futures indépendantes tirer. Au moins 1.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">Requis</span></div>
+              <p class="param-desc">À quel point les échantillons sont dispersés. Doit être supérieur à 0 ; environ 1.0 est neutre.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">Requis</span></div>
+              <p class="param-desc">Seuil d'échantillonnage par noyau, dans la plage de 0 à 1. Plus bas, il rogne la queue improbable.</p>
+            </div>
+          </div>
+          <p>Voici une requête pour 20 trajectoires contre le profil <code>hourly_orders</code> :</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>La référence complète — chaque champ, code de statut et message d'erreur — se trouve dans <a href="../api/predict.html">la référence du point de terminaison predict</a>.</p>
+
+          <h2>Lire la réponse</h2>
+          <p>Un appel réussi renvoie HTTP 200 avec quatre champs de premier niveau :</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">Un identifiant hexadécimal pour cette requête. Conservez-le pour le support et vos propres journaux.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">Reprend le profil que vous avez demandé.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Secondes Unix du dernier timestamp <em>observé</em> à partir duquel la prévision se poursuit. Chaque trajectoire commence juste après ce point.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">Une entrée par trajectoire échantillonnée (la longueur égale <code>count</code>). Chacune porte une <code>loss</code> et un tableau <code>data</code> de lignes de prévision.</p>
+            </div>
+          </div>
+          <p>L'exemple ci-dessous montre deux des trajectoires d'une prévision d'<code>orders</code>. L'<code>interval</code> du profil est 3600 et son <code>patch_spacing</code> est 2, donc les lignes avancent par <code>interval &times; patch_spacing</code> = 7200 secondes (deux heures) :</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>Chaque ligne possède un <code>timestamp</code> plus un champ par série que le profil lit — ici juste <code>orders</code>. Les timestamps avancent par <code>interval &times; patch_spacing</code> secondes, le même espacement pour chaque trajectoire, ce qui vous permet d'aligner les échantillons ligne par ligne.</p>
+
+          <h2>Les contrôles d'échantillonnage</h2>
+          <p>Trois paramètres façonnent l'ensemble de futurs que vous obtenez en retour. Ils arbitrent entre résolution et diversité d'un côté, coût et stabilité de l'autre.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Paramètre</th><th>Ce qu'il fait</th><th>Valeur typique</th><th>Augmentez / diminuez-le quand</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>Nombre de trajectoires indépendantes tirées. Plus d'échantillons résolvent mieux la distribution.</td><td>20 à 100</td><td>Augmentez pour des intervalles plus lisses ; diminuez pour réduire le coût en jetons.</td></tr>
+              <tr><td><code>temperature</code></td><td>À quel point les échantillons sont dispersés. Plus élevé est plus divers et incertain ; plus bas regroupe près du chemin le plus probable.</td><td>~1.0</td><td>Augmentez quand les prévisions semblent trop étroites ; diminuez quand elles se dispersent de manière irréaliste.</td></tr>
+              <tr><td><code>top_p</code></td><td>Seuil de noyau. Rogne la queue improbable avant l'échantillonnage.</td><td>0.9 à 1.0</td><td>Diminuez pour supprimer les sauts surprenants ; augmentez vers 1.0 pour conserver toute la distribution.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Le coût évolue avec count</div><p>Chaque échantillon est généré indépendamment et facturé par jeton d'utilisation du modèle, donc une requête avec <code>count</code> 100 coûte environ cinq fois plus qu'une avec <code>count</code> 20. Choisissez <code>count</code> pour équilibrer la résolution dont vous avez besoin et le coût.</p></div>
+          </div>
+
+          <h2>Loss : classer les trajectoires</h2>
+          <p>Chaque prédiction porte une <code>loss</code>. Plus elle est faible, plus le modèle a jugé cette trajectoire typique — plus conforme à ce qu'il attendait étant donné l'historique. Les chemins à perte plus élevée restent des échantillons valides ; ils sont simplement moins centraux.</p>
+          <p>Utilisez <code>loss</code> pour choisir une seule trajectoire représentative, ou comme pondération lorsque vous résumez l'ensemble. Pour saisir le chemin le plus typique :</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>Prédictions multivariées</h2>
+          <p>Si un profil lit plusieurs noms de séries, chaque ligne de prévision porte un champ par nom — les séries sont prédites conjointement, de sorte que leurs valeurs restent cohérentes au sein d'une même ligne. Un profil lisant <code>kw</code> et <code>price</code> ensemble renvoie des lignes comme :</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>Profils de données publics</h2>
+          <p>Vous pouvez établir des prédictions contre des profils partagés que Temporis maintient, sans aucune configuration de votre part — il suffit de passer le nom public comme <code>data_profile</code> :</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>La forme de la réponse est identique ; les champs de séries dans chaque ligne correspondent à ce que lit le profil public.</p>
+
+          <h2>Liens connexes</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Travailler avec les échantillons de prédiction →</p><p class="doc-card-desc">Transformez un ensemble de trajectoires en intervalles, médianes et décisions.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Référence Predict →</p><p class="doc-card-desc">Le schéma complet de requête et de réponse, avec chaque code de statut.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Profils de données →</p><p class="doc-card-desc">Configurez la recette qui décide ce que lit chaque prédiction.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Sur cette page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

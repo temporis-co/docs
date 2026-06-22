@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preparando seus dados — Temporis Docs</title>
+  <meta name="description" content="Como colocar seu histórico de série temporal no Temporis em um formato limpo e consistente que o modelo consegue ler bem.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Guias</span><span class="sep">/</span><span>Preparando seus dados</span></nav>
+          <h1>Preparando seus dados</h1>
+          <p class="docs-lead">Boas previsões começam com uma entrada limpa e consistente. Este guia mostra como colocar seu histórico no Temporis em um formato que ele consegue ler bem.</p>
+
+          <h2>Use segundos Unix, de forma consistente</h2>
+          <p>Cada timestamp que você envia é uma contagem inteira de <strong>segundos Unix</strong> — o número de segundos desde 1970-01-01 00:00:00 UTC. Não milissegundos, nem uma string de data ISO. Se o seu sistema de origem fornece milissegundos, divida por 1000 antes de enviar.</p>
+          <p>Escolha uma disciplina de fuso horário e nunca se desvie dela. A regra mais simples que sempre funciona: <strong>armazene tudo em UTC</strong>. Segundos Unix são inerentemente UTC, então, desde que você converta cada timestamp local para o seu verdadeiro instante UTC antes de enviar, sua série permanece internamente consistente. Misturar valores em horário local e UTC na mesma série desloca pontos silenciosamente e corrompe o padrão diário que o modelo aprende.</p>
+          <p>Seus timestamps não precisam cair em números redondos. O <code>interval</code> de um perfil de dados encaixa as observações em uma grade regular — para o perfil <code>hourly_orders</code>, cada ponto é agrupado na hora mais próxima. Você fornece o instante real em que cada observação aconteceu; o perfil cuida do alinhamento.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Uma conversão rápida</div><p>Em Python, <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> fornece os segundos Unix para um instante UTC explícito. Sempre anexe um fuso horário para que a conversão seja inequívoca.</p></div>
+          </div>
+
+          <h2>Envie o histórico em lotes</h2>
+          <p>Raramente você tem apenas uma observação para enviar — você tem meses ou anos delas. O endpoint de ingestão aceita muitos registros por requisição, então divida seu backfill em lotes de alguns milhares de registros e os envie em um laço, em vez de um registro por vez.</p>
+          <p>A ingestão é <strong>idempotente</strong>. A chave de upsert é <code>(timestamp, name)</code>, então reenviar um registro que você já enviou simplesmente o sobrescreve com o mesmo valor — uma operação sem efeito. Isso significa que um backfill é seguro para reexecutar: se um lote falhar pela metade ou seu script travar, basta iniciá-lo novamente. Você não criará duplicatas.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>Uma ingestão bem-sucedida retorna <strong>HTTP 204 No Content</strong> com corpo vazio, então não há nada para analisar — apenas confirme o status. Veja a <a href="../api/ingest.html">referência de ingestão</a> para o formato completo da requisição.</p>
+
+          <h2>Dê histórico suficiente ao modelo</h2>
+          <p>Um perfil não pode servir previsões até estar <strong>pronto</strong> — o Temporis precisa de histórico suficiente para calcular as estatísticas de normalização através das quais ele lê sua série. E cada previsão precisa de pelo menos <code>min_patches</code> de contexto recente, ou a requisição retorna <strong>409 "Not enough data for this data profile."</strong></p>
+          <p>A regra prática: <strong>na dúvida, envie mais histórico.</strong> Mais histórico permite que um perfil fique pronto, ultrapassa confortavelmente o <code>min_patches</code> e dá ao modelo mais ciclos sazonais para aprender. Não há penalidade por enviar mais do que a janela de contexto utiliza — pontos mais antigos além de <code>num_patches</code> simplesmente não são lidos no momento da previsão.</p>
+          <p>Para entender o que <code>min_patches</code>, <code>num_patches</code> e "pronto" significam e como eles se relacionam com o seu <code>interval</code>, leia <a href="../concepts/data-profiles.html">Perfis de dados</a>.</p>
+
+          <h2>Timestamps irregulares e lacunas</h2>
+          <p>Dados reais são bagunçados. Sensores pulam uma leitura, um job roda alguns minutos atrasado, uma loja fica fechada em um feriado. Você não precisa limpar nada disso manualmente — a etapa de reamostragem do perfil cuida disso.</p>
+          <p>O <code>interval</code> agrupa suas observações em uma grade regular, o que absorve timestamps <em>ligeiramente irregulares</em>: uma leitura que chega às 10:58 e outra às 11:03 caem ambas no balde das 11:00. Para baldes <em>ausentes</em>, o <code>fill_limit</code> define quantos baldes vazios consecutivos o Temporis preencherá para frente antes de desistir. Uma lacuna curta é preenchida; uma lacuna longa é deixada como um buraco e essas linhas são descartadas em vez de inventadas.</p>
+          <p>Se sua série tem tempo morto <em>recorrente</em> — horas em que nada pode possivelmente acontecer — não trate isso como dados ausentes de forma alguma. Um <code>exclude_window</code> mascara essa faixa de horário do dia para que ela nunca distorça a série. Essa é uma configuração de perfil, abordada em <a href="../concepts/data-profiles.html">Perfis de dados</a>.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Você envia as observações brutas como as tem. Onde elas caem, como as lacunas são preenchidas e qual tempo morto é ignorado são decisões que o perfil toma — não transformações que você embute nos dados.</p></div>
+          </div>
+
+          <h2>Alinhando várias séries</h2>
+          <p>Um perfil pode ler várias séries de uma vez — um perfil multivariado que as prevê em conjunto. Para que isso funcione bem, as séries precisam de uma <strong>linha do tempo comum</strong>: envie a observação de cada série no mesmo conjunto de timestamps para que as linhas se alinhem após o agrupamento.</p>
+          <p>Você pode enviar várias séries em uma única requisição de ingestão — basta incluir um registro por série em cada timestamp. Aqui, duas séries, <code>orders</code> e <code>visitors</code>, compartilham a mesma linha do tempo:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>Se uma série está ausente em um timestamp onde outra está presente, esse balde é preenchido conforme o <code>fill_limit</code>, como qualquer outra lacuna — então alguns retardatários não quebrarão o alinhamento, mas você obterá a previsão conjunta mais limpa quando as séries andarem no mesmo relógio.</p>
+
+          <h2>Correções e backfills</h2>
+          <p>Encontrou um valor errado? Reformulando um trimestre? Você não exclui nem corrige nada de especial — basta reenviar o registro corrigido. Como a chave de upsert é <code>(timestamp, name)</code>, enviar um novo <code>value</code> em um timestamp+name existente <strong>sobrescreve</strong> o antigo.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Reexecutar não tem efeitos colaterais</div><p>Como toda ingestão é um upsert idempotente, um backfill corrigido pode sobrepor com segurança dados que você já enviou. Reenvie toda a faixa afetada se for mais fácil do que calcular exatamente quais pontos mudaram.</p></div>
+          </div>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Fontes de dados →</p><p class="doc-card-desc">Como as linhas armazenadas de (timestamp, name, value) são organizadas.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfis de dados →</p><p class="doc-card-desc">A receita que lê uma fonte de dados: intervalo, patches, lacunas.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajustando um perfil de dados →</p><p class="doc-card-desc">Combine cada configuração com o ritmo dos seus dados.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

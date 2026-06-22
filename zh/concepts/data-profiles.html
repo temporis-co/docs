@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据画像 — Temporis 文档</title>
+  <meta name="description" content="数据画像是告诉 Temporis 如何读取数据源的配方：读取哪些序列、以何种节奏、使用多少历史，以及如何清洗它。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-profiles" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>概念</span><span class="sep">/</span><span>数据画像</span></nav>
+          <h1>数据画像</h1>
+          <p class="docs-lead">数据画像是告诉 Temporis 如何读取数据源的配方：读取哪些序列、以何种节奏、使用多少历史，以及如何清洗它。它就是你用来预测的对象。</p>
+
+          <h2>数据画像定义了什么</h2>
+          <p><a href="data-sources.html">数据源</a>存放的是原始的行。数据画像会把这些行变成一个干净、间距规则、模型可以读取的信号——挑选序列、把观测值对齐到时间网格、决定使用多少历史，并整理空缺。当你调用 <a href="../api/predict.html">predict</a> 时，你指定的是一个数据画像，而不是一个数据源。</p>
+
+          <p>你在控制台中创建和编辑数据画像。这里的示例是 <code>hourly_orders</code>：它以一小时为网格（<code>interval</code> 为 3600）读取 <code>store_metrics</code> 中的 <code>orders</code> 序列。</p>
+
+          <h2>选择数据</h2>
+          <h3>数据源与序列</h3>
+          <p>有两个设置决定了数据画像读取什么：</p>
+          <ul>
+            <li><code>data_source</code> —— 从哪个数据源读取。</li>
+            <li><code>names</code> —— 该数据源中的一个或多个序列名称。</li>
+          </ul>
+          <p>只列出单个 name 会得到单变量预测。列出多个——比如 <code>orders</code> 和 <code>visitors</code>——会使该数据画像成为<strong>多变量</strong>的：这些序列被联合预测，因此模型可以利用它们之间的关系。</p>
+
+          <h2>时间网格</h2>
+          <p>真实的观测值很少以完全均匀的节奏到达，因此数据画像会将它们重采样到一个规则的网格上。</p>
+
+          <p><code>interval</code> 是每个网格桶的大小，以秒为单位。当 <code>interval</code> 为 3600 时，观测值会被对齐到按小时划分的桶中。网格以你<strong>最近</strong>的观测值为锚点，并从那里向前回溯，因此最新的数据总能干净地落在网格上。</p>
+
+          <p>模型并不会逐点读取每一个点。它以 <em>patch</em> 为单位工作——也就是序列中固定大小的块：</p>
+          <ul>
+            <li><code>patch_len</code> —— 多少个点构成一个 patch。</li>
+            <li><code>patch_spacing</code> —— 它所用各点之间的步长，是一种下采样方式。</li>
+            <li><code>num_patches</code> —— 作为上下文最多使用多少个历史 patch。</li>
+            <li><code>min_patches</code> —— 提供一次预测所需的最少历史 patch 数。</li>
+          </ul>
+
+          <p>直观地说：模型看到的上下文大致是 <code>num_patches</code> 个近期历史 patch。如果某个数据画像可用的 patch 少于 <code>min_patches</code>，它就无法提供服务，你会得到 <strong>HTTP 409</strong> <code>"Not enough data for this data profile."</code></p>
+
+          <p>步长还决定了你的预测分辨率。预测点之间的有效步长为 <code>interval × patch_spacing</code> 秒。当 <code>interval</code> 为 3600、<code>patch_spacing</code> 为 1 时，预测点之间相隔一小时。</p>
+
+          <h2>清洗序列</h2>
+          <p>重采样之后，某些桶可能没有观测值。有两个设置决定如何处理这种情况：</p>
+          <ul>
+            <li><code>fill_limit</code> —— 会被前向填充（把最后一个已知值向前延续）的最长连续空桶段。比这更长的空缺会被视为真正缺失，那些行会被丢弃。</li>
+            <li><code>exclude_window</code> —— 一个需要屏蔽的、按一天中时段重复出现的时间窗口，以一个时区加上起止时刻的形式给出。用它来排除你预期中的停滞时段，比如市场闭市的夜间时段，从而让那段安静的区间不会扭曲序列。</li>
+          </ul>
+
+          <h2>水平 vs. 增长</h2>
+          <p>有些序列最好用其<em>水平</em>来建模；另一些则最好用其<em>相对变化</em>来建模。<code>use_diffs</code> 设置（即对数差分变换）会让模型转为基于对数增长——也就是从一步到下一步的比例变化——而非原始数值来工作。</p>
+
+          <p>对于呈乘性变动或在很宽范围内强烈趋势化的序列，请打开它：营收、价格，以及任何 10% 的变动比绝对变动更重要的场景。对于位于一个有界、大致平稳范围内、原始水平本身就是自然预测对象的序列，则保持关闭。</p>
+
+          <h2>就绪状态</h2>
+          <p>数据画像并不是你创建的那一刻就可用。Temporis 会先计算归一化统计量——学习你数据的典型分布范围，以便把数值缩放到模型期望的范围内。在它拥有足够数据完成这一步之前，数据画像尚未就绪，控制台会显示其就绪状态。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>针对一个尚未就绪的数据画像进行预测会返回 <strong>HTTP 404</strong> <code>"Data profile is not ready to serve."</code> 请等到控制台报告该数据画像已就绪，再调用 predict。</p></div>
+          </div>
+
+          <h2>设置参考</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>设置</th><th>它控制什么</th><th>示例</th></tr></thead>
+            <tbody>
+              <tr><td><code>data_source</code></td><td>数据画像读取哪个数据源。</td><td><code>store_metrics</code></td></tr>
+              <tr><td><code>names</code></td><td>要读取的序列；多个 name 会被联合预测（多变量）。</td><td><code>["orders"]</code></td></tr>
+              <tr><td><code>interval</code></td><td>以秒为单位的重采样桶；网格以最近的观测值为锚点。</td><td><code>3600</code></td></tr>
+              <tr><td><code>patch_len</code></td><td>一个 patch 中的点数——模型每次读取和写入的块。</td><td><code>16</code></td></tr>
+              <tr><td><code>patch_spacing</code></td><td>所用各点之间的步长；预测步长为 <code>interval × patch_spacing</code> 秒。</td><td><code>1</code></td></tr>
+              <tr><td><code>num_patches</code></td><td>作为上下文使用的最大历史 patch 数。</td><td><code>32</code></td></tr>
+              <tr><td><code>min_patches</code></td><td>提供服务所需的最少 patch 数；低于此值会返回 409 "Not enough data"。</td><td><code>4</code></td></tr>
+              <tr><td><code>fill_limit</code></td><td>需要前向填充的最长空桶段；更长的空缺会丢弃行。</td><td><code>2</code></td></tr>
+              <tr><td><code>use_diffs</code></td><td>对相对变化（对数增长）而非原始水平建模。</td><td><code>true</code></td></tr>
+              <tr><td><code>exclude_window</code></td><td>需要屏蔽的、按一天中时段重复出现的时间窗口（时区 + 起 + 止）。</td><td><code>America/New_York 20:00–08:00</code></td></tr>
+            </tbody>
+          </table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>不确定该选什么值？<a href="../guides/tuning-profile.html">调优数据画像</a>会带你逐步为自己的数据挑选 <code>interval</code>、历史长度和清洗设置。</p></div>
+          </div>
+
+          <h2>后续步骤</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">调优数据画像 →</p><p class="doc-card-desc">如何为每一项设置选择合适的值。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">预测 →</p><p class="doc-card-desc">当你针对某个数据画像进行预测时会得到什么。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">predict 端点的完整参考。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

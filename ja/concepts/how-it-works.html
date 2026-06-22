@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>予測の仕組み — Temporis Docs</title>
+  <meta name="description" content="Temporis は、言語モデルがテキストを続けるのと同じように、時系列をシーケンスとして読み取り、その続きを生成することで予測します。ここでその基本的な考え方を身につけましょう。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>コンセプト</span><span class="sep">/</span><span>予測の仕組み</span></nav>
+          <h1>予測の仕組み</h1>
+          <p class="docs-lead">Temporis は、言語モデルがテキストを続けるのと同じように、時系列を大規模モデルが読み取って続きを生成するシーケンスとして扱い、予測を行います。このページでは、API に触れる前にその基本的な考え方を身につけます。</p>
+
+          <h2>予測とはシーケンス予測である</h2>
+          <p>言語モデルは、ある程度のテキストを読み取り、次に来る内容を予測します。Temporis は同じことを数値に対して行います。系列の直近の履歴を読み取り、1 ステップずつその続きを生成するのです。</p>
+          <p>このモデルは、週末に急増する需要、変動する価格、日次で周期的に変わるエネルギー負荷など、すでに膨大で多様な時系列を学習しています。それらすべてから、「これまでの推移を踏まえると次に何が来やすいか」を学びました。こうして予測は、「この履歴を踏まえると、もっともらしい続きは何か」という、ひとつの一般的な問いに帰着します。</p>
+          <p>これは古典的な予測とは異なるアプローチです。通常であれば、まずモデルの種類を選び、1 つの系列ごとにそのパラメータを当てはめます。トレンド項や季節項を選び、それらを調整し、データが変わるたびに当てはめ直すのです。Temporis は系列ごとのモデル構築をスキップします。履歴を渡せば、多数の系列にわたって学習したパターンを活かして、シーケンスの続きを直接生成します。</p>
+
+          <h2>数値からトークンへ</h2>
+          <p>モデルが系列を読み取る前に、生の値は離散的なトークンのシーケンスに変換されます。そしてモデルの出力は再び数値へと戻されます。このパイプラインは複数の段階を経て実行されます。</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">リサンプリング</div><div class="kv-val">系列をクリーニングし、規則的な時間グリッドにスナップさせることで、データ点の間隔を均一にします。</div></div>
+            <div class="kv-row"><div class="kv-key">正規化</div><div class="kv-val">データの典型的な散らばり（おおむね 1 パーセンタイルから 99 パーセンタイルの範囲）から学習した共通のレンジへ値を再スケーリングし、異なる系列をモデルから見て比較可能にします。</div></div>
+            <div class="kv-row"><div class="kv-key">パッチ化と圧縮</div><div class="kv-val">グリッドをパッチに分割し、各パッチを周波数変換で圧縮します。パッチとは、モデルが一度に読み書きする単位です。</div></div>
+            <div class="kv-row"><div class="kv-key">量子化</div><div class="kv-val">圧縮されたパッチを離散的なトークンの語彙、すなわちモデルが実際に目にするアルファベットへとマッピングします。</div></div>
+            <div class="kv-row"><div class="kv-key">続きの生成</div><div class="kv-val">モデルはトークンのシーケンスを読み取り、言語モデルがテキストを続けるのとまったく同じように、その続きを生成します。</div></div>
+            <div class="kv-row"><div class="kv-key">デコード</div><div class="kv-val">生成されたトークンを再び数値に戻し、正規化を元に戻すことで、予測値がデータ本来のスケールに収まるようにします。</div></div>
+          </div>
+          <p>ここで鍵となる考え方がパッチです。パッチはモデルが読み書きする単位を決めます。モデルは生の観測値を 1 点ずつ動かすのではなく、パッチ単位で動かします。だからこそ予測は単一の点ではなくステップ単位で進むのです。</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">このエンコーディングはあなたが制御できます</div><p><a href="../concepts/data-profiles.html">データプロファイル</a>の設定、すなわち <code>interval</code>、<code>patch_len</code>、<code>patch_spacing</code> によって、生のデータがどのようにリサンプリングされ、上記のパッチへと分割されるかが決まります。プロファイルを調整することが、系列に合わせてエンコーディングを調整する方法です。</p></div>
+          </div>
+
+          <h2>なぜ単一の数値ではなく分布なのか</h2>
+          <p>生成とはサンプリングです。モデルがシーケンスを続けるたびに、ひとつの固定された答えに決め打ちするのではなくトークンをサンプリングするため、同じ履歴に対する 2 回の実行が 2 つの異なる未来を生み出すことがあります。これはノイズではなく、ひとつの特長です。</p>
+          <p>1 回の予測リクエストでは、複数の続きを同時に要求します。<code>count</code> パラメータは、いくつの独立した軌跡を引き出すかを設定します。それぞれが未来へ向かう、完結した整合性のある 1 本の経路です。それらが合わさって確率的な予測、すなわち 1 本の線ではなく、もっともらしい結果の雲を形成します。</p>
+          <p>これらのサンプリングのされ方を、2 つのコントロールが形作ります。<code>temperature</code> は各ステップの大胆さを設定します。高くするとサンプルがより広く散らばり、低くするとモデルがもっとも可能性が高いと考える経路の近くに集まります。<code>top_p</code> はサンプリング前に可能性の低い裾を切り落とします。返される各軌跡には <code>loss</code> も付随し、モデルがそれをどれほど典型的とみなしたかをランク付けするので、代表的な経路を選んだり、集合に重み付けをしたりできます。</p>
+          <p>実世界での価値はこの散らばりにあります。ほぼ確実に少しだけ外れているひとつの予想の代わりに、モデルがもっともらしいと考える未来の範囲が見えるのです。最良のケース、最悪のケース、そして不確実性が実際にどれほど広いかを読み取るのに十分なほどに。</p>
+          <p>レスポンスの読み方については<a href="../concepts/predictions.html">予測とサンプリング</a>を、軌跡の集合を区間に変換する方法については<a href="../guides/prediction-samples.html">予測サンプルの扱い方</a>を参照してください。</p>
+
+          <h2>データプロファイルの位置づけ</h2>
+          <p>データプロファイルは、生のデータと上記のエンコーディングを結びつける、保存されたレシピです。データソースを指し示し、読み取る系列に名前を付け、リサンプリングとパッチ化を駆動するつまみを固定します。そうすることで、そのプロファイルに対するすべての予測が、同じ方法であなたのデータを読み取ります。</p>
+          <p>主要なつまみは、<code>interval</code>（リサンプリングのバケット、秒単位）、<code>patch_len</code> と <code>patch_spacing</code>（各パッチのサイズとストライド）、<code>num_patches</code>（コンテキストとして読み取る履歴の量）、そして乗法的に増加する系列向けの <code>use_diffs</code> のような変換です。それぞれの選び方の指針を含む完全な一覧は<a href="../concepts/data-profiles.html">データプロファイル</a>にあります。</p>
+
+          <h2>次のステップ</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">データプロファイル →</p><p class="doc-card-desc">生のデータをエンコーディングに結びつけるレシピと、調整できるすべてのつまみ。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">予測とサンプリング →</p><p class="doc-card-desc">レスポンスを読み取り、count、temperature、top_p で形作る。</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">クイックスタート →</p><p class="doc-card-desc">データを取り込み、最初の予測を最初から最後まで実行する。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>데이터 소스 — Temporis Docs</title>
+  <meta name="description" content="데이터 소스는 원시 관측값이 저장되는 곳입니다. Temporis의 데이터 모델과 데이터를 스트리밍하는 방법을 알아보세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>개념</span><span class="sep">/</span><span>데이터 소스</span></nav>
+          <h1>데이터 소스</h1>
+          <p class="docs-lead">데이터 소스는 원시 관측값이 저장되는 곳입니다. 이 페이지에서는 Temporis의 데이터 모델과 데이터를 올바르게 전송하는 방법을 다룹니다.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>데이터 소스는 대시보드에서 한 번 생성한 다음, 관측값이 발생할 때마다 API를 통해 스트리밍하면 됩니다.</p></div>
+          </div>
+
+          <h2>데이터 모델</h2>
+          <p>Temporis는 데이터를 행(row) 단위로 저장합니다. 모든 관측값은 하나의 삼중 조합입니다. 즉 <em>언제</em> 측정되었는지, <em>무엇이</em> 측정되었는지, 그리고 측정한 <em>숫자</em>입니다.</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val"><strong>초</strong> 단위의 Unix 시간(정수). 관측값이 측정된 시점입니다.</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">이 값이 속하는 시계열 — 예를 들어 <code>orders</code> 또는 <code>revenue</code>.</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">숫자. 부동소수점도 가능합니다.</div></div>
+          </div>
+
+          <p>하나의 데이터 소스는 이름이 지정된 여러 시계열을 나란히 담을 수 있습니다. 이들을 구분하는 것이 바로 <code>name</code> 필드입니다. 여러분의 데이터는 다른 모든 고객의 데이터와 격리되어 있습니다 — 데이터 소스는 오롯이 여러분만의 것입니다.</p>
+
+          <h2>데이터 소스 생성하기</h2>
+          <p>데이터 소스는 대시보드의 <strong>Data Sources</strong>에서 생성합니다. 이름을 지정하면 데이터를 받을 준비가 끝납니다.</p>
+
+          <p>이름에는 몇 가지 규칙이 있습니다:</p>
+          <ul>
+            <li>소문자로 시작합니다.</li>
+            <li>소문자, 숫자, 밑줄만 사용합니다.</li>
+            <li>최대 48자까지 가능합니다.</li>
+          </ul>
+
+          <p>따라서 <code>store_metrics</code>와 <code>grid_load_eu</code>는 유효하지만, <code>Store-Metrics</code>와 <code>2024data</code>는 그렇지 않습니다. 새로 생성된 데이터 소스는 관측값을 전송하기 전까지 비어 있습니다.</p>
+
+          <h2>관측값 전송하기</h2>
+          <p>데이터는 ingest 엔드포인트로 추가합니다. 각 호출은 대상 <code>data_source</code>와 <code>records</code> 목록을 함께 전달합니다. 여기서는 몇 개의 <code>orders</code> 측정값을 <code>store_metrics</code>로 전송합니다.</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>ingest가 성공하면 빈 본문과 함께 <strong>HTTP 204 No Content</strong>를 반환합니다 — 읽어 들일 것이 없으며, 행이 그대로 저장될 뿐입니다. 전체 요청 및 오류 세부 정보는 <a href="../api/ingest.html">ingest 레퍼런스</a>를 참고하세요.</p>
+
+          <h2>하나의 소스에 여러 시계열 담기</h2>
+          <p>소스당 하나의 시계열로 제한되지 않습니다. 동일한 <code>data_source</code>에 서로 다른 <code>name</code> 값을 전송하면 별개의 시계열로 공존합니다. 어떤 매장은 주문, 매출, 방문자 수를 모두 <code>store_metrics</code> 안에서 추적할 수 있습니다.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>관련된 시계열을 함께 보관하면 편리할 뿐 아니라, 나중에 이들을 공동으로 예측할 수 있습니다. <a href="data-profiles.html">데이터 프로필</a>은 이러한 이름 중 실제로 어떤 것을 읽을지 선택하는 곳입니다.</p>
+
+          <h2>업데이트와 백필</h2>
+          <p>업서트(upsert) 키는 <code>(timestamp, name)</code> 쌍입니다. 이미 존재하는 timestamp와 name을 가진 레코드를 전송하면, 중복을 추가하는 대신 저장된 값을 <strong>덮어씁니다</strong>.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">백필과 재시도는 안전합니다</div><p>쓰기 작업이 <code>(timestamp, name)</code>에 대해 멱등(idempotent)이므로, 네트워크 장애 후 배치를 다시 보내거나, 잘못된 측정값을 정정하거나, 수개월치 이력을 어떤 순서로든 로드해도 됩니다 — 결과는 항상 버킷별로 동일한 최종 값입니다.</p></div>
+          </div>
+
+          <h2>보관 처리</h2>
+          <p>소스가 더 이상 새 데이터를 수집하지 않을 때는 대시보드에서 보관 처리(archive)할 수 있습니다. 보관 처리하면 추가 수집이 중단됩니다. 보관된 소스를 대상으로 한 요청은 <strong>HTTP 409</strong> <code>"Data source is archived."</code>를 반환합니다.</p>
+
+          <p>보관 처리는 비파괴적입니다. 기존 데이터는 그대로 유지되며, 해당 소스를 기반으로 구축된 데이터 프로필은 이미 저장된 데이터에 대해 계속 작동합니다.</p>
+
+          <h2>다음 단계</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로필 →</p><p class="doc-card-desc">소스의 원시 시계열을 예측 가능한 형태로 변환합니다.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingest API →</p><p class="doc-card-desc">ingest 엔드포인트와 그 응답에 대한 전체 레퍼런스입니다.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">데이터 준비하기 →</p><p class="doc-card-desc">깔끔하고 예측에 적합한 시계열을 만들기 위한 실용적인 조언입니다.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

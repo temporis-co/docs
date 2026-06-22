@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تحضير بياناتك — توثيق Temporis</title>
+  <meta name="description" content="كيفية إدخال سلسلتك الزمنية التاريخية إلى Temporis بصيغة نظيفة ومتسقة يستطيع النموذج قراءتها جيدًا.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>الأدلة</span><span class="sep">/</span><span>تحضير بياناتك</span></nav>
+          <h1>تحضير بياناتك</h1>
+          <p class="docs-lead">التنبؤات الجيدة تبدأ بمدخلات نظيفة ومتسقة. يغطي هذا الدليل كيفية إدخال سلسلتك التاريخية إلى Temporis بصيغة يستطيع قراءتها جيدًا.</p>
+
+          <h2>استخدم ثواني يونكس باتساق</h2>
+          <p>كل طابع زمني ترسله هو عدد صحيح من <strong>ثواني يونكس</strong> — أي عدد الثواني منذ 1970-01-01 00:00:00 بالتوقيت العالمي المنسق (UTC). ليست أجزاء من الثانية (ميلي ثانية)، وليست سلسلة تاريخ بصيغة ISO. إذا كان نظام المصدر لديك يعطيك أجزاء من الثانية، فاقسمها على 1000 قبل الإرسال.</p>
+          <p>اختر انضباطًا واحدًا للمنطقة الزمنية ولا تحِد عنه أبدًا. أبسط قاعدة تنجح دائمًا: <strong>خزّن كل شيء بالتوقيت العالمي المنسق (UTC)</strong>. ثواني يونكس بطبيعتها بالتوقيت العالمي المنسق، لذا طالما حوّلت كل طابع زمني محلي إلى لحظته الحقيقية بالتوقيت العالمي المنسق قبل الإرسال، تبقى سلسلتك متسقة داخليًا. خلط القيم بالتوقيت المحلي وبالتوقيت العالمي المنسق في السلسلة نفسها يزيح النقاط بصمت ويفسد النمط اليومي الذي يتعلمه النموذج.</p>
+          <p>لا يلزم أن تقع طوابعك الزمنية على أرقام مستديرة. تثبّت قيمة <code>interval</code> في ملف البيانات الملاحظات على شبكة منتظمة — ففي ملف <code>hourly_orders</code>، تُسنَد كل نقطة إلى أقرب ساعة. أنت تزوّد اللحظة الحقيقية التي حدثت فيها كل ملاحظة؛ والملف يتولى المحاذاة.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">تحويل سريع</div><p>في بايثون، يعطيك <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> ثواني يونكس للحظة صريحة بالتوقيت العالمي المنسق. أرفِق دائمًا منطقة زمنية حتى يكون التحويل لا لبس فيه.</p></div>
+          </div>
+
+          <h2>أرسل السجل التاريخي على دفعات</h2>
+          <p>نادرًا ما يكون لديك ملاحظة واحدة لإرسالها — بل لديك أشهر أو سنوات منها. تستقبل نقطة نهاية الإدخال سجلات كثيرة في الطلب الواحد، لذا قسّم تعبئتك السابقة إلى دفعات من بضعة آلاف من السجلات وأرسلها في حلقة بدلًا من سجل واحد في كل مرة.</p>
+          <p>الإدخال <strong>عديم التأثير عند التكرار (idempotent)</strong>. مفتاح الإدراج/التحديث هو <code>(timestamp, name)</code>، لذا فإن إعادة إرسال سجل سبق أن أرسلته يكتفي بالكتابة فوقه بالقيمة نفسها — أي بلا تأثير. هذا يعني أن إعادة تشغيل تعبئة سابقة آمنة: إذا فشلت دفعة في منتصفها أو تعطّل سكربتك، فما عليك إلا أن تبدأ من جديد. لن تُنشئ تكرارات.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>الإدخال الناجح يُرجِع <strong>HTTP 204 No Content</strong> بجسم فارغ، فلا يوجد ما يُحلَّل — فقط تأكّد من الحالة. راجع <a href="../api/ingest.html">مرجع الإدخال</a> للاطلاع على الصيغة الكاملة للطلب.</p>
+
+          <h2>امنح النموذج سجلًا تاريخيًا كافيًا</h2>
+          <p>لا يستطيع الملف تقديم تنبؤات حتى يصبح <strong>جاهزًا</strong> — يحتاج Temporis إلى سجل تاريخي كافٍ ليحسب إحصاءات التطبيع التي يقرأ سلسلتك من خلالها. وكل تنبؤ يحتاج إلى ما لا يقل عن قيمة <code>min_patches</code> من السياق الحديث، وإلا أرجع الطلب <strong>409 "Not enough data for this data profile."</strong></p>
+          <p>القاعدة العملية: <strong>عند الشك، أرسل المزيد من السجل التاريخي.</strong> يتيح المزيد من السجل للملف أن يصبح جاهزًا، ويتجاوز <code>min_patches</code> بأريحية، ويمنح النموذج المزيد من الدورات الموسمية ليتعلم منها. لا توجد عقوبة على إرسال أكثر مما تستخدمه نافذة السياق — فالنقاط الأقدم التي تتجاوز <code>num_patches</code> ببساطة لا تُقرأ وقت التنبؤ.</p>
+          <p>لمعرفة ما تعنيه <code>min_patches</code> و<code>num_patches</code> و"جاهز" وكيف ترتبط بقيمة <code>interval</code>، اقرأ <a href="../concepts/data-profiles.html">ملفات البيانات</a>.</p>
+
+          <h2>الطوابع الزمنية غير المنتظمة والفجوات</h2>
+          <p>البيانات الواقعية فوضوية. تتخطى المستشعرات قراءة، وتعمل مهمة متأخرة بضع دقائق، ويُغلق متجر في يوم عطلة. لا تحتاج إلى تنظيف أي من هذا يدويًا — فخطوة إعادة المعاينة في الملف تتولاه.</p>
+          <p>تُسنِد قيمة <code>interval</code> ملاحظاتك إلى شبكة منتظمة، ما يستوعب الطوابع الزمنية <em>غير المنتظمة قليلًا</em>: فقراءة تصل عند 10:58 وأخرى عند 11:03 تقعان كلتاهما في خانة الساعة 11:00. أما للخانات <em>المفقودة</em>، فتحدد قيمة <code>fill_limit</code> كم خانة فارغة متتالية سيملؤها Temporis للأمام قبل أن يستسلم. تُجسَّر الفجوة القصيرة؛ بينما تُترك الفجوة الطويلة ثقبًا وتُسقَط تلك الصفوف بدلًا من اختلاقها.</p>
+          <p>إذا كانت سلسلتك تحوي وقتًا ميتًا <em>متكررًا</em> — ساعات لا يمكن أن يحدث فيها أي شيء — فلا تعاملها على أنها بيانات مفقودة على الإطلاق. تُخفي قيمة <code>exclude_window</code> ذلك النطاق من أوقات اليوم بحيث لا يشوّه السلسلة أبدًا. ذلك إعداد في الملف، مشروح في <a href="../concepts/data-profiles.html">ملفات البيانات</a>.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>أنت ترسل الملاحظات الخام كما هي لديك. أما أين تقع، وكيف تُملأ الفجوات، وأي وقت ميت يُتجاهل، فهي قرارات يتخذها الملف — وليست تحويلات تدمجها أنت في البيانات.</p></div>
+          </div>
+
+          <h2>محاذاة سلاسل متعددة</h2>
+          <p>يستطيع الملف قراءة عدة سلاسل دفعة واحدة — ملف متعدد المتغيرات يتنبأ بها معًا. ولكي ينجح ذلك جيدًا، تحتاج السلاسل إلى <strong>خط زمني مشترك</strong>: أرسل ملاحظة كل سلسلة عند المجموعة نفسها من الطوابع الزمنية بحيث تصطف الصفوف بعد التقسيم إلى خانات.</p>
+          <p>يمكنك إرسال عدة سلاسل في طلب إدخال واحد — فقط ضمّن سجلًا لكل سلسلة عند كل طابع زمني. هنا تتشارك سلسلتان، <code>orders</code> و<code>visitors</code>، الخط الزمني نفسه:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>إذا كانت إحدى السلاسل مفقودة عند طابع زمني تكون فيه أخرى موجودة، فإن تلك الخانة تُملأ وفقًا لـ<code>fill_limit</code> تمامًا مثل أي فجوة أخرى — لذا فإن بضع نقاط متأخرة لن تكسر المحاذاة، لكنك ستحصل على أنظف تنبؤ مشترك حين تتحرك السلاسل على الساعة نفسها.</p>
+
+          <h2>التصحيحات والتعبئات السابقة</h2>
+          <p>وجدت قيمة خاطئة؟ تعيد بيان ربع سنة؟ لا تحذف أو ترقّع أي شيء خاص — بل تعيد ببساطة إرسال السجل المصحَّح. لأن مفتاح الإدراج/التحديث هو <code>(timestamp, name)</code>، فإن إرسال قيمة <code>value</code> جديدة عند طابع زمني واسم موجودين <strong>يكتب فوق</strong> القيمة القديمة.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">إعادة التشغيل خالية من الآثار الجانبية</div><p>لأن كل إدخال هو إدراج/تحديث عديم التأثير عند التكرار، يمكن لتعبئة سابقة مصحَّحة أن تتداخل بأمان مع بيانات سبق أن أرسلتها. أعد إرسال النطاق المتأثر بأكمله إذا كان ذلك أسهل من حساب أي النقاط تغيّرت بالضبط.</p></div>
+          </div>
+
+          <h2>ذات صلة</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">مصادر البيانات →</p><p class="doc-card-desc">كيف تُنظَّم الصفوف المخزّنة من (timestamp, name, value).</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">ملفات البيانات →</p><p class="doc-card-desc">الوصفة التي تقرأ مصدر بيانات: الفاصل، والرقع، والفجوات.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">ضبط ملف بيانات →</p><p class="doc-card-desc">طابِق كل إعداد مع إيقاع بياناتك.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

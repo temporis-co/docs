@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>एक data profile को ट्यून करना — Temporis Docs</title>
+  <meta name="description" content="अपने डेटा की लय से मेल खाने वाली interval, patch, history, और gap सेटिंग्स चुनें ताकि पूर्वानुमान काफ़ी बेहतर हों।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guides</span><span class="sep">/</span><span>एक data profile को ट्यून करना</span></nav>
+          <h1>एक data profile को ट्यून करना</h1>
+          <p class="docs-lead">डिफ़ॉल्ट काम करते हैं, पर एक profile को अपने डेटा की लय से मिलाने से पूर्वानुमान काफ़ी बेहतर हो जाते हैं। प्रत्येक सेटिंग कैसे चुनें, यह यहाँ बताया गया है। (सेटिंग्स <a href="../concepts/data-profiles.html">Data profiles</a> में परिभाषित हैं।)</p>
+
+          <h2>interval को अपनी आवृत्ति से मिलाएँ</h2>
+          <p>सबसे महत्वपूर्ण एकल सेटिंग <code>interval</code> है — वह बकेट, सेकंडों में, जिस पर आपके अवलोकनों को फिर से sample किया जाता है। इसे अपने डेटा की <strong>असली sampling अवधि</strong> पर सेट करें। अगर आप घंटे में एक बार orders दर्ज करते हैं, तो <code>3600</code> का उपयोग करें। अगर आपके पास प्रति दिन एक आँकड़ा है, तो <code>86400</code> का उपयोग करें।</p>
+          <p>इसे किसी भी दिशा में गलत करें और मॉडल जूझता है:</p>
+          <ul>
+            <li><strong>बहुत महीन</strong> — आपकी असली आवृत्ति से छोटा interval series को भरे हुए बकेटों से भर देता है, जिससे context window संकेत के बजाय शोर और खाली जगह पर खर्च होता है।</li>
+            <li><strong>बहुत मोटा</strong> — आपकी आवृत्ति से लंबा interval असली संरचना को औसत करके मिटा देता है। अगर आप किसी प्रति-घंटा माँग पैटर्न को एक दिन में बकेट कर दें तो वह बस गायब हो जाता है।</li>
+          </ul>
+          <p><code>hourly_orders</code> profile <code>interval: 3600</code> का उपयोग करती है क्योंकि <code>store_metrics</code> प्रति घंटा एक orders आँकड़ा दर्ज करता है। उस अवधि से मिलाकर शुरू करें जिस पर आपका डेटा वास्तव में आता है।</p>
+
+          <h2>कितना इतिहास: num_patches और min_patches</h2>
+          <p>ये दो सेटिंग्स एक पूर्वानुमान में शामिल <em>सबसे अधिक</em> और <em>सबसे कम</em> इतिहास को नियंत्रित करती हैं।</p>
+          <p><code>num_patches</code> context window है: हाल के इतिहास के patches की अधिकतम संख्या जो मॉडल पढ़ता है। अधिक patches का अर्थ है दृश्य में अधिक बीते चक्र, इसलिए अधिक मौसमीयता जो मॉडल पकड़ सकता है — इसे तब बढ़ाएँ जब आप चाहते हैं कि वह साप्ताहिक या वार्षिक संरचना "देखे"। हालाँकि लाभ कम होते जाते हैं; एक बिंदु के बाद आप पुराना इतिहास खिला रहे होते हैं जो अब वर्तमान को नहीं दर्शाता, अधिक tokens के बदले और बेहतर पूर्वानुमान के बिना।</p>
+          <p><code>min_patches</code> न्यूनतम सीमा है: वह न्यूनतम इतिहास जो एक profile को सेवा देने से पहले चाहिए होता है। इससे नीचे, एक predict कॉल <strong>409 "Not enough data for this data profile."</strong> लौटाता है। <code>min_patches</code> को तब बढ़ाएँ जब आप मुट्ठी भर बिंदुओं पर बने एक पूर्वानुमान को लौटाने के बजाय किसी कम-विश्वास वाले पूर्वानुमान को <em>अस्वीकार</em> करना पसंद करें — एक बिल्कुल नई series के लिए उपयोगी, जहाँ एक जल्दी का अनुमान भ्रामक होगा।</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>इसे एक सीमा के रूप में सोचें: <code>min_patches</code> है "इससे नीचे कोशिश भी मत करो," और <code>num_patches</code> है "इससे आगे पीछे मत देखो।"</p></div>
+          </div>
+
+          <h2>विभेदन बनाम क्षितिज: patch_len और patch_spacing</h2>
+          <p>एक patch बिंदुओं का वह टुकड़ा है जिसे मॉडल एक बार में पढ़ता और लिखता है। <code>patch_len</code> तय करता है कि उस टुकड़े में कितने बिंदु हैं। <code>patch_spacing</code> उन बिंदुओं के बीच का स्ट्राइड तय करता है जिन्हें आप वास्तव में उपयोग करते हैं — यह series को downsample करता है और ऐसा करते हुए यह बढ़ा देता है कि प्रत्येक उत्पन्न चरण कितना आगे तक पहुँचता है।</p>
+          <p>मुख्य संबंध: पूर्वानुमान बिंदुओं के बीच का <strong>प्रभावी समय चरण</strong> <code>interval * patch_spacing</code> सेकंड है। <code>interval: 3600</code> और <code>patch_spacing: 1</code> के साथ, प्रत्येक चरण एक घंटा है। <code>patch_spacing</code> को <code>3</code> तक बढ़ाएँ और प्रत्येक चरण तीन घंटे को कवर करता है — उत्पन्न बिंदुओं की समान संख्या अब मोटे विभेदन पर भविष्य में तीन गुना आगे तक पहुँचती है।</p>
+          <p>तो यह <strong>विवरण और पहुँच</strong> के बीच एक सौदा है। जब आपको बारीक-विवरण वाले निकट-अवधि पूर्वानुमान चाहिए तो spacing को कसकर रखें; जब आप एक लंबे क्षितिज की परवाह करते हैं और मोटा चरण स्वीकार कर सकते हैं तो इसे चौड़ा करें।</p>
+
+          <h2>स्तर बनाम वृद्धि: use_diffs</h2>
+          <p><code>use_diffs</code> (log-diff रूपांतरण) मॉडल को कच्चे स्तर के बजाय <em>सापेक्ष परिवर्तन</em> — बिंदु से बिंदु तक log वृद्धि — पर काम करने के लिए कहता है।</p>
+          <ul>
+            <li><strong>इसे चालू करें</strong> उन series के लिए जो गुणात्मक रूप से बढ़ती या चक्रवृद्धि होती हैं: राजस्व, कीमतें, उपयोगकर्ता गिनती, कोई भी चीज़ जिसमें कोई trend हो या जो "जोड़ने" के बजाय "दोगुनी" होती है। वृद्धि को मॉडल करना एक बढ़ती series को वहीं लंगर डाले रहने से रोकता है जहाँ वह पहले थी।</li>
+            <li><strong>इसे बंद रहने दें</strong> सीमित या स्थिर स्तरों के लिए जो एक नियत सीमा में मँडराते हैं: उपयोग प्रतिशत, तापमान, एक संतृप्ति दर। इनका एक प्राकृतिक स्तर होता है जिस पर लौटना होता है, और इन्हें diff करना बस शोर जोड़ता है।</li>
+          </ul>
+          <p>एक त्वरित परीक्षण: अगर आपकी series की इकाइयों को दोगुना करने से उसकी सामान्य छलांगें दोगुनी हो जानी चाहिए, तो यह गुणात्मक है — <code>use_diffs</code> चालू करें।</p>
+
+          <h2>मृत समय को मास्क करना: exclude windows</h2>
+          <p>कुछ series में आवर्ती हिस्से होते हैं जहाँ डिज़ाइन के अनुसार कुछ नहीं होता — एक बाज़ार जो रात भर बंद रहता है, व्यापारिक घंटों के बाहर एक स्टोर। अगर आप उस मृत समय को छोड़ देते हैं, तो मॉडल उन सपाट या शून्य हिस्सों को असली संकेत मानता है और एक ऐसा पैटर्न सीखता है जो वहाँ है ही नहीं।</p>
+          <p>एक <code>exclude_window</code> (एक timezone के साथ एक शुरू और रुकने का दिन-का-समय) उस आवर्ती सीमा को मास्क कर देता है ताकि वह मॉडल द्वारा पढ़ी जाने वाली series से हटा दी जाए। अपनी series जिन घंटों में संरचनात्मक रूप से निष्क्रिय रहती है उनके लिए एक सेट करें — मसलन, बाज़ार कीमतें पढ़ने वाली profile पर रात भर को मास्क करना — ताकि खुले घंटों का व्यवहार साफ रहे।</p>
+
+          <h2>अंतरालों को सहना: fill_limit</h2>
+          <p><code>fill_limit</code> लगातार गायब बकेटों का सबसे लंबा क्रम है जिसे Temporis forward-fill करेगा। सीमा से छोटे अंतराल को अंतिम मान को आगे ले जाकर पाट दिया जाता है; सीमा से लंबे अंतराल को एक छेद के रूप में छोड़ दिया जाता है, और उन पंक्तियों को हटा दिया जाता है।</p>
+          <ul>
+            <li><strong>इसे बढ़ाएँ</strong> लंबी रुकावटों को पाटने के लिए — एक सेंसर जो कभी-कभी कुछ समय के लिए ऑफ़लाइन हो जाता है, जहाँ अंतिम रीडिंग को आगे ले जाना उचित है।</li>
+            <li><strong>इसे घटाएँ</strong> जब आप बड़े छेदों के पार डेटा गढ़ना पसंद न करें — जब एक लंबा अंतराल वास्तव में "अज्ञात" का अर्थ रखता हो और एक सपाट आगे-ले-जाई गई रेखा भ्रामक होगी।</li>
+          </ul>
+
+          <h2>समस्या निवारण</h2>
+          <div class="table-wrap"><table><thead><tr><th>लक्षण</th><th>संभावित कारण</th><th>आज़माएँ</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>बहुत कम बिंदु, या <code>min_patches</code> बहुत अधिक सेट</td><td>अधिक इतिहास ingest करें, या <code>min_patches</code> घटाएँ</td></tr>
+            <tr><td>पूर्वानुमान दैनिक पैटर्न को नज़रअंदाज़ करते हैं</td><td><code>interval</code> बहुत मोटा, या संदर्भ बहुत छोटा</td><td><code>interval</code> को अपनी आवृत्ति से मिलाएँ; <code>num_patches</code> बढ़ाएँ</td></tr>
+            <tr><td>एक trending series पर पूर्वानुमान सीमा से बाहर जाते हैं</td><td>वृद्धि के बजाय कच्चे स्तरों को मॉडल करना</td><td><code>use_diffs</code> सक्षम करें</td></tr>
+            <tr><td>एक ज्ञात बंद अवधि में अजीब मान</td><td>series में मृत समय शामिल</td><td>उस सीमा के लिए एक <code>exclude_window</code> सेट करें</td></tr>
+            <tr><td>पंक्तियाँ हटा दी गईं / series विरल दिखती है</td><td>अंतराल <code>fill_limit</code> से अधिक</td><td><code>fill_limit</code> बढ़ाएँ, या आप जो डेटा भेजते हैं उसे सघन करें</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>एक बार में एक सेटिंग बदलें और पूर्वानुमानों की तुलना करें। ट्यूनिंग के बारे में तर्क करना तब आसान होता है जब प्रत्येक समायोजन का एक दृश्य, पृथक प्रभाव हो।</p></div>
+          </div>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">इस गाइड की हर सेटिंग की पूरी परिभाषा।</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">samples के साथ काम करना →</p><p class="doc-card-desc">sampled प्रक्षेपपथों को point forecasts और bands में बदलें।</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions →</p><p class="doc-card-desc">sampling कैसे एक प्रायिकता-आधारित पूर्वानुमान उत्पन्न करती है।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पृष्ठ पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

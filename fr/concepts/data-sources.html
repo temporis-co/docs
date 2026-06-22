@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sources de données — Documentation Temporis</title>
+  <meta name="description" content="Une source de données est l'endroit où vivent vos observations brutes. Découvrez le modèle de données de Temporis et comment y diffuser des données.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Sources de données</span></nav>
+          <h1>Sources de données</h1>
+          <p class="docs-lead">Une source de données est l'endroit où vivent vos observations brutes. Cette page couvre le modèle de données de Temporis et comment y envoyer des données correctement.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Vous créez une source de données une seule fois dans le tableau de bord, puis vous y diffusez des observations via l'API au fur et à mesure qu'elles se produisent.</p></div>
+          </div>
+
+          <h2>Le modèle de données</h2>
+          <p>Temporis stocke les données sous forme de lignes. Chaque observation est un simple triplet : <em>quand</em> quelque chose a été mesuré, <em>quoi</em> a été mesuré et le <em>nombre</em> que vous avez mesuré.</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">Temps Unix en <strong>secondes</strong> (un entier). Le moment où l'observation a été prise.</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">La série à laquelle cette valeur appartient — par exemple <code>orders</code> ou <code>revenue</code>.</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">Un nombre. Les nombres à virgule flottante sont acceptés.</div></div>
+          </div>
+
+          <p>Une seule source de données peut contenir de nombreuses séries nommées côte à côte. Le champ <code>name</code> est ce qui les distingue. Vos données sont isolées de celles de tout autre client — une source de données vous appartient à vous seul.</p>
+
+          <h2>Créer une source de données</h2>
+          <p>Vous créez une source de données dans le tableau de bord sous <strong>Sources de données</strong>. Donnez-lui un nom et elle est prête à recevoir des données.</p>
+
+          <p>Les noms suivent quelques règles :</p>
+          <ul>
+            <li>Commencer par une lettre minuscule.</li>
+            <li>N'utiliser que des lettres minuscules, des chiffres et des traits de soulignement.</li>
+            <li>Jusqu'à 48 caractères.</li>
+          </ul>
+
+          <p>Ainsi <code>store_metrics</code> et <code>grid_load_eu</code> sont valides ; <code>Store-Metrics</code> et <code>2024data</code> ne le sont pas. Une source de données fraîchement créée est vide jusqu'à ce que vous lui envoyiez des observations.</p>
+
+          <h2>Envoyer des observations</h2>
+          <p>Vous ajoutez des données avec le point de terminaison d'ingestion. Chaque appel transporte le <code>data_source</code> cible et une liste de <code>records</code>. Ici, nous envoyons quelques relevés d'<code>orders</code> dans <code>store_metrics</code>.</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>Une ingestion réussie renvoie <strong>HTTP 204 No Content</strong> avec un corps vide — il n'y a rien à relire, les lignes sont simplement stockées. Consultez <a href="../api/ingest.html">la référence d'ingestion</a> pour les détails complets de la requête et des erreurs.</p>
+
+          <h2>Plusieurs séries dans une seule source</h2>
+          <p>Vous n'êtes pas limité à une série par source. Envoyez différentes valeurs de <code>name</code> dans la même <code>data_source</code> et elles coexistent en tant que séries distinctes. Un magasin pourrait suivre les commandes, le chiffre d'affaires et les visiteurs, tous dans <code>store_metrics</code>.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>Garder ensemble des séries connexes est pratique et vous permet de les prévoir conjointement par la suite. Un <a href="data-profiles.html">profil de données</a> est l'endroit où vous choisissez lesquels de ces noms lire réellement.</p>
+
+          <h2>Mises à jour et remplissages rétroactifs</h2>
+          <p>La clé d'upsert est le couple <code>(timestamp, name)</code>. Envoyer un enregistrement dont le timestamp et le nom existent déjà <strong>écrase</strong> la valeur stockée plutôt que d'ajouter un doublon.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Les remplissages rétroactifs et les nouvelles tentatives sont sans danger</div><p>Parce que les écritures sont idempotentes sur <code>(timestamp, name)</code>, vous pouvez rejouer un lot après un incident réseau, corriger un relevé erroné ou charger des mois d'historique dans n'importe quel ordre — le résultat est toujours la même valeur finale par seau.</p></div>
+          </div>
+
+          <h2>Archivage</h2>
+          <p>Lorsqu'une source ne collecte plus de nouvelles données, vous pouvez l'archiver dans le tableau de bord. L'archivage arrête toute ingestion ultérieure : une requête ciblant une source archivée renvoie <strong>HTTP 409</strong> <code>"Data source is archived."</code></p>
+
+          <p>L'archivage est non destructif. Les données existantes restent en place, et tous les profils de données construits sur la source continuent de fonctionner avec les données déjà stockées.</p>
+
+          <h2>Étapes suivantes</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Profils de données →</p><p class="doc-card-desc">Transformez les séries brutes d'une source en quelque chose que vous pouvez prévoir.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">API d'ingestion →</p><p class="doc-card-desc">La référence complète du point de terminaison d'ingestion et de ses réponses.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">Préparer les données →</p><p class="doc-card-desc">Des conseils pratiques pour obtenir des séries propres et prêtes à être prévues.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Sur cette page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>توثيق Temporis — التنبؤ كواجهة برمجية</title>
+  <meta name="description" content="Temporis هي واجهة برمجية للتنبؤ بالسلاسل الزمنية. أرسل بياناتك، وعرّف ملف بيانات، وأنشئ تنبؤات احتمالية بطلب واحد.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="index" data-base="">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <div class="docs-hero">
+            <span class="eyebrow">توثيق Temporis</span>
+            <h1>التنبؤ، كواجهة برمجية.</h1>
+            <p class="docs-lead">
+              تحوّل Temporis سلاسلك الزمنية إلى تنبؤات احتمالية. أرسل
+              أرقامك تدفقًا، وصِف كيف ينبغي قراءتها باستخدام <strong>ملف بيانات</strong>،
+              ثم استدعِ نقطة نهاية واحدة لإنشاء تنبؤات بما هو آتٍ — دون نماذج
+              تدرّبها، ودون بنية تحتية تشغّلها.
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <a class="doc-card" href="quickstart.html">
+              <p class="doc-card-kicker">ابدأ هنا</p>
+              <p class="doc-card-title">البداية السريعة →</p>
+              <p class="doc-card-desc">انتقل من مفتاح واجهة برمجية إلى أول تنبؤ لك في نحو خمس دقائق.</p>
+            </a>
+            <a class="doc-card" href="concepts/how-it-works.html">
+              <p class="doc-card-kicker">افهم</p>
+              <p class="doc-card-title">كيف يعمل التنبؤ →</p>
+              <p class="doc-card-desc">الفكرة وراء Temporis: معاملة السلسلة الزمنية كلغة يستطيع نموذج قراءتها.</p>
+            </a>
+            <a class="doc-card" href="api/predict.html">
+              <p class="doc-card-kicker">مرجع</p>
+              <p class="doc-card-title">مرجع الواجهة البرمجية →</p>
+              <p class="doc-card-desc">أشكال الطلب والاستجابة الدقيقة لكل نقطة نهاية.</p>
+            </a>
+          </div>
+
+          <h2>شكل سير العمل في Temporis</h2>
+          <p>
+            يدور كل شيء في Temporis حول ثلاثة مفاهيم. وبمجرد أن تتضح،
+            تتبعها الواجهة البرمجية بأكملها بشكل طبيعي.
+          </p>
+
+          <div class="kv">
+            <div class="kv-row">
+              <div class="kv-key">مصدر البيانات</div>
+              <div class="kv-val">تدفّق مُسمّى تدفع إليه الملاحظات الخام — مثل جدول من صفوف <code>(timestamp, name, value)</code>. يمكن لمصدر بيانات واحد أن يحتوي على سلاسل كثيرة.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">ملف البيانات</div>
+              <div class="kv-val">وصفة محفوظة تخبر Temporis <em>كيف</em> يقرأ مصدر بيانات: أي سلاسل، وبأي فترة، وكم من التاريخ، وكيف يُنظّفها. هذا ما تتنبأ بناءً عليه.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">التنبؤ</div>
+              <div class="kv-val">استدعاء واحد لـ <code>/v1/predict</code> مع ملف بيانات يعيد عدة احتمالات مستقبلية، كلٌ منها مسار كامل من القيم نحو المستقبل.</div>
+            </div>
+          </div>
+
+          <p>
+            تدير مصادر البيانات وملفات البيانات في
+            <a href="https://platform.temporis.co">لوحة تحكم Temporis</a>، وتنجز العمل
+            عالي الحجم — إرسال البيانات وطلب التنبؤات — عبر الواجهة البرمجية
+            الموثّقة هنا.
+          </p>
+
+          <h2>لمحة أولى</h2>
+          <p>يبدو إرسال الملاحظات وطلب تنبؤ كما يلي:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code># 1. Send observations to a data source
+curl -X POST "https://api.temporis.co/v1/data_sources/ingest" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1716249600, "name": "orders", "value": 42 },
+      { "timestamp": 1716253200, "name": "orders", "value": 51 }
+    ]
+  }'
+
+# 2. Ask a data profile for the next steps
+curl -X POST "https://api.temporis.co/v1/predict" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+BASE = "https://api.temporis.co"
+headers = {"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"}
+
+# 1. Send observations to a data source
+requests.post(f"{BASE}/v1/data_sources/ingest", headers=headers, json={
+    "data_source": "store_metrics",
+    "records": [
+        {"timestamp": 1716249600, "name": "orders", "value": 42},
+        {"timestamp": 1716253200, "name": "orders", "value": 51},
+    ],
+}).raise_for_status()
+
+# 2. Ask a data profile for the next steps
+forecast = requests.post(f"{BASE}/v1/predict", headers=headers, json={
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9,
+}).json()
+
+print(forecast["predictions"][0]["data"])</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const BASE = "https://api.temporis.co";
+const headers = {
+  "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
+// 1. Send observations to a data source
+await fetch(`${BASE}/v1/data_sources/ingest`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1716249600, name: "orders", value: 42 },
+      { timestamp: 1716253200, name: "orders", value: 51 },
+    ],
+  }),
+});
+
+// 2. Ask a data profile for the next steps
+const res = await fetch(`${BASE}/v1/predict`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const forecast = await res.json();
+console.log(forecast.predictions[0].data);</code></pre></div>
+          </div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body">
+              <div class="callout-title">جديد على التنبؤ بالسلاسل الزمنية؟</div>
+              <p>ابدأ بـ <a href="concepts/how-it-works.html">كيف يعمل التنبؤ</a>. فهي تشرح النموذج الذهني وراء Temporis قبل أن تلمس الواجهة البرمجية، وستقرأ بقية التوثيق بسهولة أكبر بفضله.</p>
+            </div>
+          </div>
+
+          <h2>إلى أين تذهب بعد ذلك</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="concepts/data-sources.html">
+              <p class="doc-card-title">مصادر البيانات</p>
+              <p class="doc-card-desc">كيف تخزّن Temporis الملاحظات وكيف ترسلها بشكل جيد.</p>
+            </a>
+            <a class="doc-card" href="concepts/data-profiles.html">
+              <p class="doc-card-title">ملفات البيانات</p>
+              <p class="doc-card-desc">كل إعداد يشكّل كيفية قراءة بياناتك والتنبؤ بها.</p>
+            </a>
+            <a class="doc-card" href="concepts/predictions.html">
+              <p class="doc-card-title">التنبؤات والمعاينة</p>
+              <p class="doc-card-desc">قراءة التنبؤات، وماذا يفعل <code>count</code> و<code>temperature</code> و<code>top_p</code>.</p>
+            </a>
+            <a class="doc-card" href="guides/prediction-samples.html">
+              <p class="doc-card-title">العمل مع العينات</p>
+              <p class="doc-card-desc">حوّل العديد من مسارات العينات إلى فترات وتنبؤات نقطية.</p>
+            </a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ошибки и коды статусов — Temporis Docs</title>
+  <meta name="description" content="Как Temporis сообщает об успехе и неудаче, что означает каждый HTTP-статус и как обрабатывать их в своём коде.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/errors" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Документация</a><span class="sep">/</span><span>Справочник по API</span><span class="sep">/</span><span>Ошибки и коды статусов</span></nav>
+          <h1>Ошибки и коды статусов</h1>
+          <p class="docs-lead">Как Temporis сообщает об успехе и неудаче, что означает каждый статус и как их обрабатывать.</p>
+
+          <h2>Форма ответа</h2>
+          <p>Форма ответа зависит от того, что произошло:</p>
+          <ul>
+            <li>Успешная <a href="../api/ingest.html">загрузка</a> возвращает <strong>204 No Content</strong> без тела.</li>
+            <li>Успешный <a href="../api/predict.html">прогноз</a> возвращает <strong>200</strong> с JSON-телом.</li>
+            <li>Любая ошибка возвращает соответствующий HTTP-статус с JSON-телом вида <code>{ "detail": "..." }</code>.</li>
+          </ul>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Data profile not found." }</code></pre></div>
+
+          <h2>Коды статусов</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Статус</th><th>Значение</th><th>Где</th></tr></thead>
+            <tbody>
+              <tr><td>200 OK</td><td>Прогноз выполнен успешно; тело содержит выборки.</td><td>predict</td></tr>
+              <tr><td>204 No Content</td><td>Загрузка выполнена успешно; тела нет.</td><td>ingest</td></tr>
+              <tr><td>400 Bad Request</td><td>Недопустимые параметры прогноза.</td><td>predict</td></tr>
+              <tr><td>401 Unauthorized</td><td>Отсутствует или неверный токен доступа.</td><td>все запросы</td></tr>
+              <tr><td>402 Payment Required</td><td>Нет привязанной карты или проблема с оплатой.</td><td>predict</td></tr>
+              <tr><td>404 Not Found</td><td>Источник данных не найден (ingest); профиль данных не найден или не готов к работе (predict).</td><td>ingest, predict</td></tr>
+              <tr><td>409 Conflict</td><td>Источник данных архивирован (ingest); недостаточно данных (predict).</td><td>ingest, predict</td></tr>
+              <tr><td>502 Bad Gateway</td><td>Прогноз не выполнен — временная ошибка на стороне сервера.</td><td>predict</td></tr>
+            </tbody>
+          </table></div>
+
+          <h2>Обработка ошибок</h2>
+          <p>Большинство сбоев соответствуют понятному следующему действию:</p>
+          <ul>
+            <li><strong>401</strong> — убедитесь, что заголовок <code>Authorization</code> присутствует и токен действителен. См. <a href="../api/authentication.html">Аутентификация</a>.</li>
+            <li><strong>402</strong> — добавьте или исправьте кредитную карту в панели управления в разделе «Биллинг», затем повторите попытку.</li>
+            <li><strong>404</strong> — убедитесь, что источник данных или профиль данных существует и что профиль готов к работе.</li>
+            <li><strong>409 при predict</strong> — загружайте больше истории, пока профиль не достигнет своего минимума, затем повторите попытку.</li>
+            <li><strong>409 при ingest</strong> — источник данных архивирован; разархивируйте его или пишите в другой источник.</li>
+            <li><strong>502</strong> — временная ошибка. Повторите с экспоненциальной задержкой.</li>
+          </ul>
+
+          <p>Простое ветвление по коду статуса покрывает все эти случаи:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import time, requests
+
+def predict(payload, token, retries=3):
+    for attempt in range(retries):
+        resp = requests.post(
+            "https://api.temporis.co/v1/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 502:
+            time.sleep(2 ** attempt)   # transient: back off and retry
+            continue
+        detail = resp.json().get("detail", "")
+        if resp.status_code == 402:
+            raise RuntimeError(f"Billing: {detail} — add a card in the dashboard.")
+        if resp.status_code == 409:
+            raise RuntimeError(f"Not ready: {detail} — ingest more history.")
+        resp.raise_for_status()        # 400 / 401 / 404: fix the request
+    raise RuntimeError("Prediction failed after retries.")</code></pre></div>
+
+          <h2>Повторные попытки</h2>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Повторяйте то, что нужно</div><p>502 безопасно повторять — это временная ошибка. Загрузка идемпотентна (записи обновляются по ключу <code>(timestamp, name)</code>), поэтому повторять неудавшуюся загрузку всегда безопасно. Избегайте слепого повтора ответов 4xx; сначала исправьте запрос.</p></div>
+          </div>
+
+          <h2>Связанные материалы</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Создание прогноза →</p><p class="doc-card-desc">Запрос и ответ для эндпоинта predict.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Загрузка записей →</p><p class="doc-card-desc">Запись наблюдений в источник данных.</p></a>
+            <a class="doc-card" href="../api/authentication.html"><p class="doc-card-title">Аутентификация →</p><p class="doc-card-desc">Создание и отправка bearer-токенов.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">На этой странице</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

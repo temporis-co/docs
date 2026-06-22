@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>调优数据画像 — Temporis 文档</title>
+  <meta name="description" content="选择与你数据节奏相匹配的时间间隔、补丁、历史和缺口设置，从而获得明显更好的预测。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>指南</span><span class="sep">/</span><span>调优数据画像</span></nav>
+          <h1>调优数据画像</h1>
+          <p class="docs-lead">默认值是可用的，但让画像贴合你数据的节奏会使预测明显更好。下面介绍如何选择每一项设置。（各项设置的定义见<a href="../concepts/data-profiles.html">数据画像</a>。）</p>
+
+          <h2>让时间间隔匹配你的采样节奏</h2>
+          <p>最重要的单项设置就是 <code>interval</code> —— 即你的观测值被重采样到的桶大小，以秒为单位。把它设为你数据的<strong>真实采样周期</strong>。如果你每小时记录一次订单，就用 <code>3600</code>。如果你每天一个数字，就用 <code>86400</code>。</p>
+          <p>无论朝哪个方向设错，模型都会陷入困境：</p>
+          <ul>
+            <li><strong>过细</strong> —— 比你真实采样节奏更短的时间间隔会用填充出来的桶撑满序列，把上下文窗口耗费在噪声和空白上，而不是信号上。</li>
+            <li><strong>过粗</strong> —— 比你采样节奏更长的时间间隔会把真实结构平均掉。如果你把按小时的需求规律归桶到一天，它就会直接消失。</li>
+          </ul>
+          <p><code>hourly_orders</code> 画像使用 <code>interval: 3600</code>，因为 <code>store_metrics</code> 每小时记录一个订单数字。请从匹配你数据实际到达的周期开始。</p>
+
+          <h2>需要多少历史数据：num_patches 与 min_patches</h2>
+          <p>这两项设置分别控制一次预测所涉及的<em>最多</em>和<em>最少</em>历史数据。</p>
+          <p><code>num_patches</code> 是上下文窗口：模型读取的近期历史补丁数量上限。补丁越多，视野中的过去周期就越多，模型能捕捉的季节性也就越多 —— 当你希望它"看到"每周或每年的结构时，就调高它。不过收益会递减；超过某个点之后，你只是在为更多 token 喂入不再反映当下的陈旧历史，预测并不会变好。</p>
+          <p><code>min_patches</code> 是下限：画像在开始提供服务之前所要求的最少历史数据。低于它时，一次预测调用会返回 <strong>409 "Not enough data for this data profile."</strong> 当你宁愿<em>拒绝</em>一个低置信度的预测，也不愿返回一个基于寥寥几个点构建的预测时，就调高 <code>min_patches</code> —— 这对于一个全新的序列很有用，因为过早的猜测会产生误导。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>可以把它想成一个区间：<code>min_patches</code> 是"低于这个数就别尝试"，而 <code>num_patches</code> 是"回看到这个数就停下"。</p></div>
+          </div>
+
+          <h2>分辨率 vs. 预测跨度：patch_len 与 patch_spacing</h2>
+          <p>补丁是模型每次读取和写入的那一块数据点。<code>patch_len</code> 设定一块中包含多少个点。<code>patch_spacing</code> 设定你实际使用的点之间的步长 —— 它会对序列降采样，并在此过程中拉长每个生成步所能触及的未来距离。</p>
+          <p>关键关系在于：预测点之间的<strong>有效时间步</strong>是 <code>interval * patch_spacing</code> 秒。在 <code>interval: 3600</code> 和 <code>patch_spacing: 1</code> 的情况下，每一步是一小时。把 <code>patch_spacing</code> 提高到 <code>3</code>，每一步就覆盖三小时 —— 相同数量的生成点现在以更粗的分辨率触及三倍远的未来。</p>
+          <p>所以这是<strong>细节与触及范围</strong>之间的权衡。当你需要细粒度的近期预测时，把步长保持得紧凑；当你关心更长的预测跨度并且能接受更粗的步长时，就把它加宽。</p>
+
+          <h2>水平值 vs. 增长率：use_diffs</h2>
+          <p><code>use_diffs</code>（对数差分变换）告诉模型在<em>相对变化</em>上工作 —— 即点到点之间的对数增长 —— 而不是原始的水平值。</p>
+          <ul>
+            <li>对于以乘性方式增长或复合的序列<strong>打开它</strong>：营收、价格、用户数，以及任何具有趋势或会"翻倍"而非"累加"的序列。对增长建模可以使一个上升的序列不被锚定在它过去所处的位置。</li>
+            <li>对于在固定范围内徘徊的有界或平稳水平值<strong>保持关闭</strong>：利用率百分比、温度、饱和率。它们有一个会回归的自然水平，对它们做差分只会增加噪声。</li>
+          </ul>
+          <p>一个快速判断：如果把你序列的单位翻倍应当使其典型的跳动也翻倍，那它就是乘性的 —— 打开 <code>use_diffs</code>。</p>
+
+          <h2>屏蔽停滞时段：exclude windows</h2>
+          <p>有些序列存在按设计周期性出现、什么都不会发生的时段 —— 一个隔夜休市的市场、一家营业时间之外的商店。如果你把这些停滞时段留在序列里，模型会把那些平直或为零的时段当作真实信号，并学到一个根本不存在的规律。</p>
+          <p><code>exclude_window</code>（一个时区加上起止的每日时刻）会屏蔽那段周期性范围，使其从模型读取的序列中被剔除。为你序列结构性空闲的时段设置一个 —— 比如在一个读取市场价格的画像上屏蔽隔夜时段 —— 这样开市时段的行为就能保持干净。</p>
+
+          <h2>容忍缺口：fill_limit</h2>
+          <p><code>fill_limit</code> 是 Temporis 会进行前向填充的最长连续缺失桶数。短于该上限的缺口会通过把最后一个值向前延续来桥接；长于该上限的缺口会保留为空洞，相应的行会被丢弃。</p>
+          <ul>
+            <li><strong>调高它</strong>以桥接更长的中断 —— 比如一个偶尔会离线一阵的传感器，此时把最后一个读数向前延续是合理的。</li>
+            <li><strong>调低它</strong>当你宁愿不在大空洞上凭空生成数据时 —— 当一个长缺口确实意味着"未知"，而一条平直的向前延续线会产生误导时。</li>
+          </ul>
+
+          <h2>问题排查</h2>
+          <div class="table-wrap"><table><thead><tr><th>症状</th><th>可能原因</th><th>尝试</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>数据点太少，或 <code>min_patches</code> 设得过高</td><td>导入更多历史数据，或调低 <code>min_patches</code></td></tr>
+            <tr><td>预测忽略了日内规律</td><td><code>interval</code> 过粗，或上下文过短</td><td>让 <code>interval</code> 匹配你的采样节奏；调高 <code>num_patches</code></td></tr>
+            <tr><td>对趋势性序列预测过冲</td><td>对原始水平值而非增长率建模</td><td>启用 <code>use_diffs</code></td></tr>
+            <tr><td>在已知的歇业时段出现异常值</td><td>停滞时段被包含在序列中</td><td>为该范围设置 <code>exclude_window</code></td></tr>
+            <tr><td>行被丢弃 / 序列看起来稀疏</td><td>缺口超过了 <code>fill_limit</code></td><td>调高 <code>fill_limit</code>，或加密你发送的数据</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>每次只改动一项设置并对比预测。当每次调整都有可见、孤立的效果时，调优更容易推理。</p></div>
+          </div>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">本指南中每项设置的完整定义。</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">使用样本 →</p><p class="doc-card-desc">把采样轨迹转化为点预测和置信区间。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">预测 →</p><p class="doc-card-desc">采样如何产生一个概率性预测。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

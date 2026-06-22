@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ein Datenprofil abstimmen — Temporis Docs</title>
+  <meta name="description" content="Wählen Sie Intervall-, Patch-, Historie- und Lücken-Einstellungen, die zum Rhythmus Ihrer Daten passen, für spürbar bessere Prognosen.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Anleitungen</span><span class="sep">/</span><span>Ein Datenprofil abstimmen</span></nav>
+          <h1>Ein Datenprofil abstimmen</h1>
+          <p class="docs-lead">Die Standardwerte funktionieren, aber ein Profil auf den Rhythmus Ihrer Daten abzustimmen macht Prognosen spürbar besser. So wählen Sie jede Einstellung. (Die Einstellungen sind unter <a href="../concepts/data-profiles.html">Datenprofile</a> definiert.)</p>
+
+          <h2>Intervall an Ihren Takt anpassen</h2>
+          <p>Die mit Abstand wichtigste Einstellung ist <code>interval</code> — der Bucket in Sekunden, auf den Ihre Beobachtungen neu abgetastet werden. Setzen Sie ihn auf die <strong>tatsächliche Abtastperiode</strong> Ihrer Daten. Wenn Sie Bestellungen einmal pro Stunde erfassen, verwenden Sie <code>3600</code>. Wenn Sie eine Zahl pro Tag haben, verwenden Sie <code>86400</code>.</p>
+          <p>Liegen Sie in einer der beiden Richtungen falsch, hat das Modell Probleme:</p>
+          <ul>
+            <li><strong>Zu fein</strong> — ein Intervall, das kürzer ist als Ihr tatsächlicher Takt, polstert die Reihe mit aufgefüllten Buckets auf und verbraucht das Kontextfenster für Rauschen und Leerraum statt für Signal.</li>
+            <li><strong>Zu grob</strong> — ein Intervall, das länger ist als Ihr Takt, mittelt echte Struktur weg. Ein stündliches Nachfragemuster verschwindet einfach, wenn Sie es auf einen Tag bündeln.</li>
+          </ul>
+          <p>Das Profil <code>hourly_orders</code> verwendet <code>interval: 3600</code>, weil <code>store_metrics</code> eine Bestellzahl pro Stunde erfasst. Beginnen Sie damit, die Periode anzupassen, in der Ihre Daten tatsächlich eintreffen.</p>
+
+          <h2>Wie viel Historie: num_patches und min_patches</h2>
+          <p>Diese beiden Einstellungen steuern das <em>Maximum</em> und das <em>Minimum</em> an Historie, das in eine Prognose einfließt.</p>
+          <p><code>num_patches</code> ist das Kontextfenster: die maximale Anzahl an Patches aktueller Historie, die das Modell liest. Mehr Patches bedeuten mehr vergangene Zyklen im Blick, also mehr Saisonalität, die das Modell aufnehmen kann — erhöhen Sie es, wenn es wöchentliche oder jährliche Struktur "sehen" soll. Der Nutzen flacht jedoch ab; ab einem bestimmten Punkt füttern Sie alte Historie ein, die die Gegenwart nicht mehr widerspiegelt, für mehr Tokens und keine bessere Prognose.</p>
+          <p><code>min_patches</code> ist die Untergrenze: die Mindesthistorie, die ein Profil benötigt, bevor es überhaupt liefert. Darunter gibt ein Predict-Aufruf <strong>409 "Not enough data for this data profile."</strong> zurück. Erhöhen Sie <code>min_patches</code>, wenn Sie eine Prognose mit geringer Konfidenz lieber <em>ablehnen</em>, als eine zu liefern, die auf einer Handvoll Punkten beruht — nützlich für eine brandneue Reihe, bei der eine frühe Schätzung irreführend wäre.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Stellen Sie es sich als Spanne vor: <code>min_patches</code> ist "versuche es darunter gar nicht erst" und <code>num_patches</code> ist "blicke nicht weiter zurück als bis hierhin".</p></div>
+          </div>
+
+          <h2>Auflösung vs. Horizont: patch_len und patch_spacing</h2>
+          <p>Ein Patch ist der Block an Punkten, den das Modell jeweils liest und schreibt. <code>patch_len</code> legt fest, wie viele Punkte in diesem Block sind. <code>patch_spacing</code> legt den Schritt zwischen den Punkten fest, die Sie tatsächlich verwenden — es tastet die Reihe herunter und dehnt dabei, wie weit jeder erzeugte Schritt in die Zukunft reicht.</p>
+          <p>Die zentrale Beziehung: Der <strong>effektive Zeitschritt</strong> zwischen Prognosepunkten beträgt <code>interval * patch_spacing</code> Sekunden. Mit <code>interval: 3600</code> und <code>patch_spacing: 1</code> ist jeder Schritt eine Stunde. Erhöhen Sie <code>patch_spacing</code> auf <code>3</code> und jeder Schritt umfasst drei Stunden — dieselbe Anzahl erzeugter Punkte reicht nun dreimal so weit in die Zukunft, bei gröberer Auflösung.</p>
+          <p>Dies ist also ein Kompromiss zwischen <strong>Detailgrad und Reichweite</strong>. Halten Sie das Spacing eng, wenn Sie feingranulare kurzfristige Prognosen brauchen; weiten Sie es, wenn Ihnen ein längerer Horizont wichtig ist und Sie einen gröberen Schritt akzeptieren können.</p>
+
+          <h2>Niveaus vs. Wachstum: use_diffs</h2>
+          <p><code>use_diffs</code> (die Log-Diff-Transformation) weist das Modell an, mit <em>relativer Veränderung</em> zu arbeiten — logarithmisches Wachstum von Punkt zu Punkt — statt mit dem rohen Niveau.</p>
+          <ul>
+            <li><strong>Schalten Sie es ein</strong> für Reihen, die multiplikativ wachsen oder sich verstärken: Umsatz, Preise, Nutzerzahlen, alles mit einem Trend oder das sich "verdoppelt" statt "addiert". Wachstum zu modellieren verhindert, dass eine steigende Reihe an ihrem früheren Stand verankert bleibt.</li>
+            <li><strong>Lassen Sie es aus</strong> für begrenzte oder stationäre Niveaus, die in einem festen Bereich schwanken: Auslastungsprozentsatz, Temperatur, eine Sättigungsrate. Diese haben ein natürliches Niveau, zu dem sie zurückkehren, und das Differenzieren fügt ihnen nur Rauschen hinzu.</li>
+          </ul>
+          <p>Ein schneller Test: Wenn eine Verdopplung der Einheiten Ihrer Reihe auch deren typische Sprünge verdoppeln sollte, ist sie multiplikativ — schalten Sie <code>use_diffs</code> ein.</p>
+
+          <h2>Totzeit maskieren: Exclude-Windows</h2>
+          <p>Manche Reihen haben wiederkehrende Abschnitte, in denen per Design nichts passiert — ein Markt, der über Nacht geschlossen ist, ein Geschäft außerhalb der Öffnungszeiten. Wenn Sie diese Totzeit drin lassen, behandelt das Modell diese flachen oder Null-Abschnitte als echtes Signal und lernt ein Muster, das gar nicht da ist.</p>
+          <p>Ein <code>exclude_window</code> (eine Zeitzone plus eine Start- und Stopp-Tageszeit) maskiert diesen wiederkehrenden Bereich, sodass er aus der Reihe, die das Modell liest, entfernt wird. Setzen Sie eines für die Stunden, in denen Ihre Reihe strukturell untätig ist — etwa das Maskieren der Nacht bei einem Profil, das Marktpreise liest — damit das Verhalten während der Öffnungszeiten sauber bleibt.</p>
+
+          <h2>Lücken tolerieren: fill_limit</h2>
+          <p><code>fill_limit</code> ist die längste Folge aufeinanderfolgender fehlender Buckets, die Temporis per Forward-Fill auffüllt. Eine Lücke, die kürzer ist als das Limit, wird durch Übertragen des letzten Werts überbrückt; eine Lücke, die länger ist als das Limit, bleibt ein Loch, und diese Zeilen werden verworfen.</p>
+          <ul>
+            <li><strong>Erhöhen Sie es</strong>, um längere Ausfälle zu überbrücken — ein Sensor, der gelegentlich für eine Weile offline geht, wo es vernünftig ist, die letzte Messung weiterzuführen.</li>
+            <li><strong>Senken Sie es</strong>, wenn Sie über große Löcher hinweg lieber keine Daten erfinden möchten — wenn eine lange Lücke wirklich "unbekannt" bedeutet und eine flache, weitergeführte Linie irreführend wäre.</li>
+          </ul>
+
+          <h2>Fehlerbehebung</h2>
+          <div class="table-wrap"><table><thead><tr><th>Symptom</th><th>Wahrscheinliche Ursache</th><th>Versuchen Sie</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>Zu wenige Punkte, oder <code>min_patches</code> zu hoch gesetzt</td><td>Mehr Historie einlesen, oder <code>min_patches</code> senken</td></tr>
+            <tr><td>Prognosen ignorieren das tägliche Muster</td><td><code>interval</code> zu grob, oder Kontext zu kurz</td><td><code>interval</code> an Ihren Takt anpassen; <code>num_patches</code> erhöhen</td></tr>
+            <tr><td>Prognosen schießen bei einer trendenden Reihe über das Ziel hinaus</td><td>Rohe Niveaus statt Wachstum modelliert</td><td><code>use_diffs</code> aktivieren</td></tr>
+            <tr><td>Merkwürdige Werte über einen bekannten geschlossenen Zeitraum</td><td>Totzeit in der Reihe enthalten</td><td>Ein <code>exclude_window</code> für diesen Bereich setzen</td></tr>
+            <tr><td>Zeilen verworfen / Reihe wirkt spärlich</td><td>Lücken überschreiten <code>fill_limit</code></td><td><code>fill_limit</code> erhöhen, oder die gesendeten Daten verdichten</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Ändern Sie jeweils nur eine Einstellung und vergleichen Sie die Prognosen. Das Abstimmen ist leichter nachzuvollziehen, wenn jede Anpassung eine sichtbare, isolierte Wirkung hat.</p></div>
+          </div>
+
+          <h2>Verwandt</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Datenprofile →</p><p class="doc-card-desc">Die vollständige Definition jeder Einstellung in dieser Anleitung.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Mit Samples arbeiten →</p><p class="doc-card-desc">Aus gesampelten Trajektorien Punktprognosen und Bänder machen.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prognosen →</p><p class="doc-card-desc">Wie Sampling eine probabilistische Prognose erzeugt.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

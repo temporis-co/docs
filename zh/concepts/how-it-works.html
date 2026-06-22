@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>预测的工作原理 — Temporis 文档</title>
+  <meta name="description" content="Temporis 将你的时间序列作为一个序列来读取并继续延伸，就像语言模型续写文本一样。在这里建立起这种思维模型。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>概念</span><span class="sep">/</span><span>预测的工作原理</span></nav>
+          <h1>预测的工作原理</h1>
+          <p class="docs-lead">Temporis 进行预测时，会把你的时间序列当作一个由大模型读取并继续延伸的序列——就像语言模型续写文本一样。本页将在你接触 API 之前帮助你建立起这种思维模型。</p>
+
+          <h2>预测就是序列预测</h2>
+          <p>语言模型读取一段文本，然后预测接下来会出现什么。Temporis 对数字做的是同样的事情。它读取你序列的近期历史，然后一步一步地继续延伸它。</p>
+          <p>该模型已经见过种类极其繁多的时间序列——周末激增的需求、随机漂移的价格、按日循环的能耗负荷。它从所有这些数据中学到了：给定之前发生的情况，接下来往往会发生什么。于是预测就归结为一个统一、通用的问题：给定这段历史，怎样的延续才是合理的？</p>
+          <p>这是一种与经典预测不同的工作方式。通常你需要先选择一个模型族，再针对单条序列逐一拟合其参数——挑选趋势项和季节项，调优它们，并在数据发生变化时重新拟合。Temporis 跳过了针对每条序列的建模过程。你把历史交给它，它直接继续延伸这个序列，借助的是从大量序列中学到的模式。</p>
+
+          <h2>从数字到 token</h2>
+          <p>在模型能够读取你的序列之前，原始数值会被转换成一串离散的 token——而模型的输出又会被转换回数字。整条流水线分阶段运行：</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">重采样</div><div class="kv-val">清洗序列并将其对齐到规则的时间网格上，使各点之间的间距保持一致。</div></div>
+            <div class="kv-row"><div class="kv-key">归一化</div><div class="kv-val">将数值重新缩放到一个从你数据的典型分布范围（大致是第 1 到第 99 百分位区间）学习而来的统一范围，使不同的序列在模型看来具有可比性。</div></div>
+            <div class="kv-row"><div class="kv-key">分块与压缩</div><div class="kv-val">把网格切分成一个个 patch，并用频域变换压缩每个 patch。patch 是模型每次读取和写入的单位。</div></div>
+            <div class="kv-row"><div class="kv-key">量化</div><div class="kv-val">将压缩后的 patch 映射到一个由离散 token 组成的词表中——也就是模型实际看到的字母表。</div></div>
+            <div class="kv-row"><div class="kv-key">继续延伸</div><div class="kv-val">模型读取 token 序列并生成其延续，就像语言模型续写文本一样。</div></div>
+            <div class="kv-row"><div class="kv-key">解码</div><div class="kv-val">将生成的 token 转换回数字，撤销归一化，使预测落回你数据的真实尺度上。</div></div>
+          </div>
+          <p>patch 是这里的关键思想：它决定了模型读取和写入的单位。模型不是一次移动一个原始观测值——它一次移动一个 patch，这就是预测以步进而非单点方式推进的原因。</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">这种编码方式由你掌控</div><p><a href="../concepts/data-profiles.html">数据画像</a>上的设置——它的 <code>interval</code>、<code>patch_len</code> 和 <code>patch_spacing</code>——决定了你的原始数据如何被重采样并切分成上述 patch。调优数据画像就是你为自己的序列调整编码方式的途径。</p></div>
+          </div>
+
+          <h2>为什么是一个分布，而不是单个数字</h2>
+          <p>生成就是采样。每次模型继续延伸序列时，它都会抽取 token，而不是锁定到某个固定答案，因此在同一段历史上跑两次可能产生两种不同的未来。这是一项特性，而非噪声。</p>
+          <p>一次预测请求会同时要求生成多条延续。<code>count</code> 参数设定要抽取多少条独立的轨迹；每一条都是一条完整且自洽的通向未来的路径。它们共同构成一个概率性预测：是一团合理结果的云，而不是单独一条线。</p>
+          <p>有两个控制项决定这些样本是如何被抽取的。<code>temperature</code> 设定每一步的冒险程度——越高样本越分散，越低则样本越集中在模型最可能的路径附近。<code>top_p</code> 在采样前裁剪掉不太可能的尾部。每条返回的轨迹还带有一个 <code>loss</code>，用于衡量模型认为它有多典型，从而让你能挑选一条有代表性的路径或对整组样本加权。</p>
+          <p>真正的现实价值在于这种分散范围。你看到的不再是一个几乎肯定略有偏差的猜测，而是模型认为合理的未来区间——足以让你读出最好情况、最坏情况，以及不确定性究竟有多大。</p>
+          <p>关于如何读取响应，参见<a href="../concepts/predictions.html">预测与采样</a>；关于如何把一组轨迹转化为区间，参见<a href="../guides/prediction-samples.html">使用预测样本</a>。</p>
+
+          <h2>数据画像的位置</h2>
+          <p>数据画像是一份已保存的配方，它把你的原始数据与上述编码方式绑定在一起。它指向一个数据源，指定要读取的序列，并固定那些驱动重采样和分块的旋钮——这样针对该数据画像的每一次预测都会以相同的方式读取你的数据。</p>
+          <p>关键的旋钮包括 <code>interval</code>（以秒为单位的重采样桶）、<code>patch_len</code> 和 <code>patch_spacing</code>（每个 patch 的大小和步长）、<code>num_patches</code>（作为上下文读取多少历史），以及针对呈乘性增长序列的 <code>use_diffs</code> 等变换。完整列表及每一项的选择指南，参见<a href="../concepts/data-profiles.html">数据画像</a>。</p>
+
+          <h2>后续步骤</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">把原始数据绑定到编码方式的配方——以及你可以调优的每一个旋钮。</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">预测与采样 →</p><p class="doc-card-desc">读取响应，并用 count、temperature 和 top_p 来塑造它。</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">快速上手 →</p><p class="doc-card-desc">从导入数据到端到端运行你的第一个预测。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Predicciones y muestreo — Temporis Docs</title>
+  <meta name="description" content="Una solicitud de predicción devuelve varios futuros posibles. Aprende a leer la respuesta y cómo count, temperature y top_p la moldean.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Conceptos</span><span class="sep">/</span><span>Predicciones y muestreo</span></nav>
+          <h1>Predicciones y muestreo</h1>
+          <p class="docs-lead">Una solicitud de predicción devuelve varios futuros posibles en lugar de uno solo. Esta página explica cómo leer la respuesta y cómo los controles de muestreo la moldean. Para el esquema exacto, consulta <a href="../api/predict.html">la referencia de predict</a>.</p>
+
+          <h2>Anatomía de una solicitud</h2>
+          <p>Predices contra un perfil de datos, no contra una fuente de datos en bruto. El perfil ya sabe qué series leer y cómo codificarlas, así que una solicitud solo tiene que indicar qué perfil y cómo muestrear. Cuatro campos lo cubren:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">Obligatorio</span></div>
+              <p class="param-desc">El nombre de uno de tus perfiles, como <code>hourly_orders</code> — o un perfil público.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">Obligatorio</span></div>
+              <p class="param-desc">Cuántas trayectorias futuras independientes generar. Al menos 1.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">Obligatorio</span></div>
+              <p class="param-desc">Cuán dispersas están las muestras. Debe ser mayor que 0; alrededor de 1.0 es neutral.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">Obligatorio</span></div>
+              <p class="param-desc">Umbral de muestreo de núcleo (nucleus) en el rango de 0 a 1. Más bajo recorta la cola improbable.</p>
+            </div>
+          </div>
+          <p>Aquí tienes una solicitud de 20 trayectorias contra el perfil <code>hourly_orders</code>:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>La referencia completa — cada campo, código de estado y mensaje de error — está en <a href="../api/predict.html">la referencia del endpoint de predict</a>.</p>
+
+          <h2>Lectura de la respuesta</h2>
+          <p>Una llamada exitosa devuelve HTTP 200 con cuatro campos de nivel superior:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">Un identificador hexadecimal para esta solicitud. Consérvalo para soporte y tus propios registros.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">Repite el perfil que solicitaste.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Segundos Unix de la última marca de tiempo <em>observada</em> desde la que continúa el pronóstico. Cada trayectoria comienza justo después de este punto.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">Una entrada por trayectoria muestreada (la longitud es igual a <code>count</code>). Cada una lleva un <code>loss</code> y un array <code>data</code> de filas de pronóstico.</p>
+            </div>
+          </div>
+          <p>El ejemplo de abajo muestra dos de las trayectorias de un pronóstico de <code>orders</code>. El <code>interval</code> del perfil es 3600 y su <code>patch_spacing</code> es 2, así que las filas avanzan de <code>interval &times; patch_spacing</code> = 7200 segundos (dos horas):</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>Cada fila tiene un <code>timestamp</code> más un campo por serie que el perfil lee — aquí solo <code>orders</code>. Las marcas de tiempo avanzan de <code>interval &times; patch_spacing</code> segundos, el mismo espaciado para cada trayectoria, de modo que puedes alinear las muestras fila por fila.</p>
+
+          <h2>Los controles de muestreo</h2>
+          <p>Tres parámetros moldean el conjunto de futuros que recibes. Equilibran resolución y diversidad frente a coste y estabilidad.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Parámetro</th><th>Qué hace</th><th>Valor típico</th><th>Súbelo / bájalo cuando</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>Número de trayectorias independientes generadas. Más muestras resuelven mejor la distribución.</td><td>20 a 100</td><td>Súbelo para intervalos más suaves; bájalo para reducir el coste en tokens.</td></tr>
+              <tr><td><code>temperature</code></td><td>Cuán dispersas están las muestras. Más alto es más diverso e incierto; más bajo se agrupa cerca del camino más probable.</td><td>~1.0</td><td>Súbelo cuando los pronósticos se vean demasiado estrechos; bájalo cuando se dispersen de forma poco realista.</td></tr>
+              <tr><td><code>top_p</code></td><td>Umbral de núcleo (nucleus). Recorta la cola improbable antes de muestrear.</td><td>0.9 a 1.0</td><td>Bájalo para suprimir saltos sorprendentes; súbelo hacia 1.0 para conservar la distribución completa.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">El coste escala con count</div><p>Cada muestra se genera de forma independiente y se mide por token de uso del modelo, así que una solicitud con <code>count</code> 100 cuesta aproximadamente cinco veces más que una con <code>count</code> 20. Elige <code>count</code> para equilibrar la resolución que necesitas frente al coste.</p></div>
+          </div>
+
+          <h2>Loss: ordenar las trayectorias</h2>
+          <p>Cada predicción lleva un <code>loss</code>. Más bajo significa que el modelo consideró esa trayectoria más típica — más acorde con lo que esperaba dado el histórico. Los caminos con mayor loss siguen siendo muestras válidas; simplemente son menos centrales.</p>
+          <p>Usa <code>loss</code> para elegir una única trayectoria representativa, o como peso cuando resumas el conjunto. Para tomar el camino más típico:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>Predicciones multivariantes</h2>
+          <p>Si un perfil lee varios nombres de series, cada fila de pronóstico lleva un campo por nombre — las series se predicen conjuntamente, de modo que sus valores se mantienen consistentes dentro de una fila. Un perfil que lee <code>kw</code> y <code>price</code> juntos devuelve filas como:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>Perfiles de datos públicos</h2>
+          <p>Puedes predecir contra perfiles compartidos que Temporis mantiene, sin ninguna configuración propia — simplemente pasa el nombre público como <code>data_profile</code>:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>La forma de la respuesta es idéntica; los campos de series en cada fila coinciden con lo que sea que el perfil público lea.</p>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Trabajar con muestras de predicción →</p><p class="doc-card-desc">Convierte un conjunto de trayectorias en intervalos, medianas y decisiones.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Referencia de predict →</p><p class="doc-card-desc">El esquema completo de solicitud y respuesta, con todos los códigos de estado.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfiles de datos →</p><p class="doc-card-desc">Configura la receta que decide qué lee cada predicción.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">En esta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

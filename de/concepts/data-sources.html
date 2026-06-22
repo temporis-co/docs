@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Datenquellen — Temporis Docs</title>
+  <meta name="description" content="Eine Datenquelle ist der Ort, an dem Ihre Roh-Beobachtungen liegen. Lernen Sie das Datenmodell von Temporis kennen und wie Sie Daten hineinstreamen.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Konzepte</span><span class="sep">/</span><span>Datenquellen</span></nav>
+          <h1>Datenquellen</h1>
+          <p class="docs-lead">Eine Datenquelle ist der Ort, an dem Ihre Roh-Beobachtungen liegen. Diese Seite behandelt das Datenmodell von Temporis und wie Sie Daten richtig hineinsenden.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Sie erstellen eine Datenquelle einmal im Dashboard und streamen dann Beobachtungen über die API hinein, sobald sie anfallen.</p></div>
+          </div>
+
+          <h2>Das Datenmodell</h2>
+          <p>Temporis speichert Daten als Zeilen. Jede Beobachtung ist ein einzelnes Tripel: <em>wann</em> etwas gemessen wurde, <em>was</em> gemessen wurde und die <em>Zahl</em>, die Sie gemessen haben.</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">Unix-Zeit in <strong>Sekunden</strong> (eine Ganzzahl). Der Zeitpunkt, zu dem die Beobachtung erfasst wurde.</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">Die Reihe, zu der dieser Wert gehört — zum Beispiel <code>orders</code> oder <code>revenue</code>.</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">Eine Zahl. Fließkommawerte sind in Ordnung.</div></div>
+          </div>
+
+          <p>Eine einzelne Datenquelle kann viele benannte Reihen nebeneinander aufnehmen. Das Feld <code>name</code> ist es, das sie auseinanderhält. Ihre Daten sind von denen jedes anderen Kunden isoliert — eine Datenquelle gehört allein Ihnen.</p>
+
+          <h2>Eine Datenquelle erstellen</h2>
+          <p>Sie erstellen eine Datenquelle im Dashboard unter <strong>Data Sources</strong>. Geben Sie ihr einen Namen, und sie ist bereit, Daten zu empfangen.</p>
+
+          <p>Namen folgen einigen Regeln:</p>
+          <ul>
+            <li>Beginnen Sie mit einem Kleinbuchstaben.</li>
+            <li>Verwenden Sie nur Kleinbuchstaben, Ziffern und Unterstriche.</li>
+            <li>Bis zu 48 Zeichen.</li>
+          </ul>
+
+          <p>So sind <code>store_metrics</code> und <code>grid_load_eu</code> gültig; <code>Store-Metrics</code> und <code>2024data</code> sind es nicht. Eine frisch erstellte Datenquelle ist leer, bis Sie ihr Beobachtungen senden.</p>
+
+          <h2>Beobachtungen senden</h2>
+          <p>Sie fügen Daten über den Ingest-Endpoint hinzu. Jeder Aufruf trägt die Ziel-<code>data_source</code> und eine Liste von <code>records</code>. Hier schieben wir ein paar <code>orders</code>-Messwerte in <code>store_metrics</code>.</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>Ein erfolgreicher Ingest liefert <strong>HTTP 204 No Content</strong> mit leerem Body — es gibt nichts zurückzulesen, die Zeilen werden einfach gespeichert. Siehe <a href="../api/ingest.html">die Ingest-Referenz</a> für die vollständige Anfrage und Fehlerdetails.</p>
+
+          <h2>Viele Reihen in einer Quelle</h2>
+          <p>Sie sind nicht auf eine Reihe pro Quelle beschränkt. Senden Sie verschiedene <code>name</code>-Werte in dieselbe <code>data_source</code>, und sie koexistieren als separate Reihen. Ein Geschäft könnte Orders, Revenue und Visitors allesamt in <code>store_metrics</code> erfassen.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>Verwandte Reihen zusammenzuhalten ist praktisch und ermöglicht es Ihnen, sie später gemeinsam zu prognostizieren. In einem <a href="data-profiles.html">Datenprofil</a> wählen Sie aus, welche dieser Namen tatsächlich gelesen werden.</p>
+
+          <h2>Aktualisierungen und Backfills</h2>
+          <p>Der Upsert-Schlüssel ist das Paar <code>(timestamp, name)</code>. Wird ein Record gesendet, dessen Zeitstempel und Name bereits existieren, <strong>überschreibt</strong> dies den gespeicherten Wert, statt ein Duplikat hinzuzufügen.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Backfills und erneute Versuche sind sicher</div><p>Da Schreibvorgänge auf <code>(timestamp, name)</code> idempotent sind, können Sie einen Batch nach einem Netzwerkaussetzer erneut abspielen, einen falschen Messwert korrigieren oder monatelange Historie in beliebiger Reihenfolge laden — das Ergebnis ist immer derselbe finale Wert pro Bucket.</p></div>
+          </div>
+
+          <h2>Archivieren</h2>
+          <p>Wenn eine Quelle keine neuen Daten mehr sammelt, können Sie sie im Dashboard archivieren. Das Archivieren stoppt die weitere Aufnahme: Eine Anfrage, die auf eine archivierte Quelle zielt, liefert <strong>HTTP 409</strong> <code>"Data source is archived."</code></p>
+
+          <p>Das Archivieren ist nicht destruktiv. Bestehende Daten bleiben erhalten, und alle auf der Quelle aufgebauten Datenprofile arbeiten weiterhin gegen die bereits gespeicherten Daten.</p>
+
+          <h2>Nächste Schritte</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Datenprofile →</p><p class="doc-card-desc">Die rohen Reihen einer Quelle in etwas verwandeln, das Sie prognostizieren können.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingest-API →</p><p class="doc-card-desc">Die vollständige Referenz für den Ingest-Endpoint und seine Antworten.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">Daten vorbereiten →</p><p class="doc-card-desc">Praktische Hinweise, um saubere, prognosefertige Reihen einzuspielen.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

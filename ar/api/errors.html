@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>الأخطاء ورموز الحالة — توثيق Temporis</title>
+  <meta name="description" content="كيف يبلّغ Temporis عن النجاح والفشل، وماذا يعني كل رمز حالة HTTP، وكيف تتعامل معه في شيفرتك.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/errors" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>مرجع الواجهة البرمجية</span><span class="sep">/</span><span>الأخطاء ورموز الحالة</span></nav>
+          <h1>الأخطاء ورموز الحالة</h1>
+          <p class="docs-lead">كيف يبلّغ Temporis عن النجاح والفشل، وماذا تعني كل حالة، وكيف تتعامل معها.</p>
+
+          <h2>شكل الاستجابة</h2>
+          <p>يعتمد شكل الاستجابة على ما حدث:</p>
+          <ul>
+            <li>عملية <a href="../api/ingest.html">إدخال</a> ناجحة تُرجع <strong>204 No Content</strong> دون جسم.</li>
+            <li>عملية <a href="../api/predict.html">تنبؤ</a> ناجحة تُرجع <strong>200</strong> مع جسم JSON.</li>
+            <li>أي خطأ يُرجع رمز حالة HTTP المعني مع جسم JSON بالصيغة <code>{ "detail": "..." }</code>.</li>
+          </ul>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Data profile not found." }</code></pre></div>
+
+          <h2>رموز الحالة</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>الحالة</th><th>المعنى</th><th>أين</th></tr></thead>
+            <tbody>
+              <tr><td>200 OK</td><td>نجح التنبؤ؛ الجسم يحمل العيّنات.</td><td>predict</td></tr>
+              <tr><td>204 No Content</td><td>نجح الإدخال؛ لا يوجد جسم.</td><td>ingest</td></tr>
+              <tr><td>400 Bad Request</td><td>معاملات تنبؤ غير صحيحة.</td><td>predict</td></tr>
+              <tr><td>401 Unauthorized</td><td>رمز وصول مفقود أو غير صحيح.</td><td>كل الطلبات</td></tr>
+              <tr><td>402 Payment Required</td><td>لا توجد بطاقة مسجّلة، أو هناك مشكلة في الدفع.</td><td>predict</td></tr>
+              <tr><td>404 Not Found</td><td>مصدر البيانات غير موجود (الإدخال)؛ ملف البيانات غير موجود أو غير جاهز للخدمة (التنبؤ).</td><td>ingest، predict</td></tr>
+              <tr><td>409 Conflict</td><td>مصدر البيانات مؤرشف (الإدخال)؛ لا توجد بيانات كافية (التنبؤ).</td><td>ingest، predict</td></tr>
+              <tr><td>502 Bad Gateway</td><td>فشل التنبؤ — خطأ عابر من جهة الخادم.</td><td>predict</td></tr>
+            </tbody>
+          </table></div>
+
+          <h2>التعامل مع الأخطاء</h2>
+          <p>معظم حالات الفشل تترجَم إلى إجراء تالٍ واضح:</p>
+          <ul>
+            <li><strong>401</strong> — تحقق من وجود ترويسة <code>Authorization</code> ومن صحة الرمز. راجع <a href="../api/authentication.html">المصادقة</a>.</li>
+            <li><strong>402</strong> — أضف بطاقة ائتمان أو أصلحها في لوحة التحكم ضمن الفوترة، ثم أعد المحاولة.</li>
+            <li><strong>404</strong> — تأكد من وجود مصدر البيانات أو ملف البيانات، ومن أن الملف جاهز للخدمة.</li>
+            <li><strong>409 في التنبؤ</strong> — أدخل مزيدًا من التاريخ حتى يستوفي الملف حدّه الأدنى، ثم أعد المحاولة.</li>
+            <li><strong>409 في الإدخال</strong> — مصدر البيانات مؤرشف؛ ألغِ أرشفته أو اكتب إلى مصدر آخر.</li>
+            <li><strong>502</strong> — عابر. أعد المحاولة مع تراجع أسّي.</li>
+          </ul>
+
+          <p>تفرّع بسيط على رمز الحالة يغطي كل هذه الحالات:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import time, requests
+
+def predict(payload, token, retries=3):
+    for attempt in range(retries):
+        resp = requests.post(
+            "https://api.temporis.co/v1/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 502:
+            time.sleep(2 ** attempt)   # transient: back off and retry
+            continue
+        detail = resp.json().get("detail", "")
+        if resp.status_code == 402:
+            raise RuntimeError(f"Billing: {detail} — add a card in the dashboard.")
+        if resp.status_code == 409:
+            raise RuntimeError(f"Not ready: {detail} — ingest more history.")
+        resp.raise_for_status()        # 400 / 401 / 404: fix the request
+    raise RuntimeError("Prediction failed after retries.")</code></pre></div>
+
+          <h2>إعادة المحاولة</h2>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">أعد محاولة الأشياء المناسبة</div><p>الرمز 502 آمن لإعادة المحاولة — فهو عابر. والإدخال متماثل (idempotent) (تجري عمليات الكتابة إدراجًا/تحديثًا على المفتاح <code>(timestamp, name)</code>)، لذا فإن إعادة محاولة إدخال فاشل آمنة دائمًا. تجنّب إعادة محاولة استجابات 4xx بشكل أعمى؛ أصلح الطلب أولًا.</p></div>
+          </div>
+
+          <h2>ذات صلة</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">إنشاء تنبؤ →</p><p class="doc-card-desc">الطلب والاستجابة لنقطة نهاية التنبؤ.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">إدخال السجلات →</p><p class="doc-card-desc">اكتب المشاهدات إلى مصدر بيانات.</p></a>
+            <a class="doc-card" href="../api/authentication.html"><p class="doc-card-title">المصادقة →</p><p class="doc-card-desc">أنشئ رموز الحامل وأرسلها.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

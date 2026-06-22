@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>예측 생성 — Temporis Docs</title>
+  <meta name="description" content="predict 엔드포인트로 Temporis 데이터 프로파일에서 하나 이상의 샘플링된 미래 궤적을 추출합니다.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/predict" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>API 레퍼런스</span><span class="sep">/</span><span>예측 생성</span></nav>
+          <h1>예측 생성</h1>
+          <p class="docs-lead">데이터 프로파일에서 하나 이상의 샘플링된 미래를 추출합니다. 등록된 결제 카드가 필요합니다.</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/predict</span></div>
+
+          <h2>요청 본문</h2>
+          <p>데이터 프로파일과 원하는 샘플의 형태를 지정합니다.</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">필수</span></div>
+              <p class="param-desc">여러분의 프로파일 중 하나의 이름, 또는 <code>temporis/polymarket</code>과 같은 공개 프로파일의 이름입니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">필수</span></div>
+              <p class="param-desc">추출할 독립적인 미래 궤적의 개수입니다. 최소 1 이상이어야 합니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">필수</span></div>
+              <p class="param-desc">0보다 큰 샘플링 온도입니다. 값이 높을수록 샘플이 넓게 퍼지고, 낮을수록 가장 가능성 높은 경로에 가깝게 유지됩니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">필수</span></div>
+              <p class="param-desc">0에서 1 사이의 뉴클리어스 샘플링 기준값입니다. 값이 낮을수록 가능성이 낮은 꼬리 부분을 잘라내고, 1.0이면 전체 분포를 유지합니다.</p>
+            </div>
+          </div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p><code>count</code>, <code>temperature</code>, <code>top_p</code>에 대한 자세한 설명은 <a href="../concepts/predictions.html">예측</a>에 있습니다.</p></div>
+          </div>
+
+          <h2>요청 예제</h2>
+          <p>다음은 중립적인 온도로 <code>hourly_orders</code> 프로파일에서 다섯 개의 궤적을 추출합니다:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 5,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_profile": "hourly_orders",
+		"count":        5,
+		"temperature":  1.0,
+		"top_p":        0.9,
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/predict", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&amp;result)
+	fmt.Println(result)
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/predict");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_profile" =&gt; "hourly_orders",
+        "count"        =&gt; 5,
+        "temperature"  =&gt; 1.0,
+        "top_p"        =&gt; 0.9,
+    ]),
+]);
+$result = json_decode(curl_exec($ch), true);
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/predict")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_profile: "hourly_orders",
+  count: 5,
+  temperature: 1.0,
+  top_p: 0.9,
+}.to_json
+
+res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+result = JSON.parse(res.body)</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/predict"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.body());</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    { "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+var response = await client.PostAsync("https://api.temporis.co/v1/predict", content);
+var result = await response.Content.ReadAsStringAsync();
+Console.WriteLine(result);</code></pre></div>
+          </div>
+
+          <h2>응답 필드</h2>
+          <p>요청이 성공하면 다음 본문과 함께 HTTP 200을 반환합니다.</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">이 예측 요청의 고유 식별자입니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">요청한 프로파일 이름을 그대로 반환합니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Unix 초 단위: 예측이 이어지는 마지막 관측 타임스탬프입니다. 모든 궤적은 이 지점에서 앞으로 전개됩니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">샘플링된 궤적입니다. 길이는 요청한 <code>count</code>와 같습니다.</p>
+            </div>
+          </div>
+
+          <h3>Prediction 객체</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">loss</span><span class="param-type">number</span></div>
+              <p class="param-desc">값이 낮을수록 모델이 이 궤적을 더 전형적이라고 판단했음을 의미합니다. 대표 샘플을 순위 매기거나 고를 때 사용하세요.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data</span><span class="param-type">array</span></div>
+              <p class="param-desc">예측 행입니다. 각 행에는 <code>timestamp</code>와 프로파일의 시계열 이름마다 하나의 필드가 있습니다.</p>
+            </div>
+          </div>
+
+          <h2>응답 예제</h2>
+          <p>위의 단일 시계열 <code>orders</code> 프로파일에 대해, <code>predict_from</code>이 마지막 관측 시각이고 행이 한 시간씩 앞으로 전개되는 경우입니다:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "a3f9c1d7e84b2065",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718852400,
+  "predictions": [
+    {
+      "loss": 1.84,
+      "data": [
+        { "timestamp": 1718856000, "orders": 58 },
+        { "timestamp": 1718859600, "orders": 61 },
+        { "timestamp": 1718863200, "orders": 55 }
+      ]
+    },
+    {
+      "loss": 2.07,
+      "data": [
+        { "timestamp": 1718856000, "orders": 49 },
+        { "timestamp": 1718859600, "orders": 66 },
+        { "timestamp": 1718863200, "orders": 72 }
+      ]
+    }
+    // remaining samples omitted
+  ]
+}</code></pre></div>
+
+          <h2>공개 데이터 프로파일</h2>
+          <p>공개 프로파일 이름을 <code>data_profile</code>로 전달하면 별도의 설정 없이 공유 데이터셋으로 예측할 수 있습니다. 이러한 프로파일은 Temporis가 관리하며 바로 사용할 수 있습니다:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 3, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+
+          <h2>오류</h2>
+          <p>오류는 HTTP 상태와 함께 <code>{ "detail": "..." }</code> 형식의 JSON 본문을 반환합니다.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>상태</th><th>detail 메시지</th><th>의미</th></tr></thead>
+            <tbody>
+              <tr><td>400</td><td>Invalid prediction parameters.</td><td>count가 1 미만이거나 temperature가 0보다 크지 않은 경우 등, 파라미터가 허용 범위를 벗어났습니다.</td></tr>
+              <tr><td>402</td><td>Add a credit card before using the API. / There is a payment issue. Add a new credit card.</td><td>활성 결제 수단이 없습니다. 대시보드에서 카드를 추가하거나 수정하세요.</td></tr>
+              <tr><td>404</td><td>Data profile not found.</td><td>해당 이름의 프로파일이 존재하지 않습니다.</td></tr>
+              <tr><td>404</td><td>Data profile is not ready to serve.</td><td>프로파일은 존재하지만 아직 준비가 완료되지 않았습니다.</td></tr>
+              <tr><td>409</td><td>Not enough data for this data profile.</td><td>프로파일의 이력이 최소 요구치보다 적습니다. 더 수집한 후 다시 시도하세요.</td></tr>
+              <tr><td>502</td><td>Prediction failed.</td><td>일시적인 서버 측 오류입니다. 백오프를 적용해 재시도해도 안전합니다.</td></tr>
+            </tbody>
+          </table></div>
+          <p>전체 레퍼런스는 <a href="../api/errors.html">오류 및 상태 코드</a>를 참고하세요.</p>
+
+          <h2>관련 항목</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">예측 →</p><p class="doc-card-desc">샘플링, count, temperature, top_p가 예측을 어떻게 형성하는지.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">샘플 다루기 →</p><p class="doc-card-desc">궤적을 구간 예측과 점 예측으로 변환합니다.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로파일 →</p><p class="doc-card-desc">예측을 위해 소스를 준비하는 레시피.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

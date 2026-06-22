@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>예측과 샘플링 — Temporis Docs</title>
+  <meta name="description" content="예측 요청은 여러 가지 가능한 미래를 반환합니다. 응답을 읽는 방법과 count, temperature, top_p가 응답을 어떻게 형성하는지 알아보세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>개념</span><span class="sep">/</span><span>예측과 샘플링</span></nav>
+          <h1>예측과 샘플링</h1>
+          <p class="docs-lead">예측 요청은 하나가 아니라 여러 가지 가능한 미래를 반환합니다. 이 페이지에서는 응답을 읽는 방법과 샘플링 제어가 이를 어떻게 형성하는지 설명합니다. 정확한 스키마는 <a href="../api/predict.html">predict 레퍼런스</a>를 참고하세요.</p>
+
+          <h2>요청의 구조</h2>
+          <p>예측은 원시 데이터 소스가 아니라 데이터 프로필을 대상으로 합니다. 프로필은 이미 어떤 시계열을 읽고 어떻게 인코딩할지 알고 있으므로, 요청은 어떤 프로필을 사용하고 어떻게 샘플링할지만 지정하면 됩니다. 네 개의 필드로 충분합니다:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">필수</span></div>
+              <p class="param-desc"><code>hourly_orders</code>와 같은 여러분의 프로필 중 하나의 이름 — 또는 공개 프로필.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">필수</span></div>
+              <p class="param-desc">추출할 독립적인 미래 궤적의 개수. 최소 1개입니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">필수</span></div>
+              <p class="param-desc">샘플이 얼마나 퍼져 있는지를 나타냅니다. 0보다 커야 하며, 약 1.0이 중립값입니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">필수</span></div>
+              <p class="param-desc">0에서 1 범위의 뉴클리어스 샘플링 컷오프. 낮출수록 가능성이 낮은 꼬리 부분을 잘라냅니다.</p>
+            </div>
+          </div>
+          <p>다음은 <code>hourly_orders</code> 프로필을 대상으로 20개의 궤적을 요청하는 예시입니다:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>모든 필드, 상태 코드, 오류 메시지를 포함한 전체 레퍼런스는 <a href="../api/predict.html">predict 엔드포인트 레퍼런스</a>에 있습니다.</p>
+
+          <h2>응답 읽기</h2>
+          <p>호출이 성공하면 네 개의 최상위 필드와 함께 HTTP 200을 반환합니다:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">이 요청에 대한 16진수 식별자. 지원 문의와 자체 로그를 위해 보관하세요.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">요청한 프로필을 그대로 돌려줍니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">예측이 이어지는 마지막 <em>관측된</em> 타임스탬프의 Unix 초입니다. 모든 궤적은 이 지점 바로 다음부터 시작합니다.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">샘플링된 궤적마다 하나의 항목(길이는 <code>count</code>와 같음). 각 항목은 <code>loss</code>와 예측 행으로 이루어진 <code>data</code> 배열을 담습니다.</p>
+            </div>
+          </div>
+          <p>아래 예시는 <code>orders</code> 예측의 궤적 중 두 개를 보여줍니다. 프로필의 <code>interval</code>은 3600이고 <code>patch_spacing</code>은 2이므로, 행은 <code>interval &times; patch_spacing</code> = 7200초(2시간) 간격으로 진행됩니다:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>각 행에는 <code>timestamp</code>와 함께 프로필이 읽는 시계열마다 하나의 필드가 있습니다 — 여기서는 <code>orders</code> 하나뿐입니다. 타임스탬프는 <code>interval &times; patch_spacing</code>초 간격으로 진행되며, 이 간격은 모든 궤적에서 동일하므로 샘플을 행 단위로 정렬할 수 있습니다.</p>
+
+          <h2>샘플링 제어</h2>
+          <p>세 개의 파라미터가 돌려받는 미래의 집합을 형성합니다. 이들은 해상도와 다양성을 비용 및 안정성과 맞바꿉니다.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>파라미터</th><th>역할</th><th>일반적인 값</th><th>높이거나 낮춰야 할 때</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>추출되는 독립 궤적의 개수. 샘플이 많을수록 분포를 더 잘 분해합니다.</td><td>20에서 100</td><td>더 매끄러운 구간을 원하면 높이고, 토큰 비용을 줄이려면 낮춥니다.</td></tr>
+              <tr><td><code>temperature</code></td><td>샘플이 얼마나 퍼져 있는지. 높을수록 더 다양하고 불확실하며, 낮을수록 가장 가능성 높은 경로 근처에 모입니다.</td><td>~1.0</td><td>예측이 너무 좁아 보이면 높이고, 비현실적으로 흩어지면 낮춥니다.</td></tr>
+              <tr><td><code>top_p</code></td><td>뉴클리어스 컷오프. 샘플링 전에 가능성이 낮은 꼬리 부분을 잘라냅니다.</td><td>0.9에서 1.0</td><td>예상치 못한 급변을 억제하려면 낮추고, 전체 분포를 유지하려면 1.0 쪽으로 높입니다.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">비용은 count에 비례합니다</div><p>각 샘플은 독립적으로 생성되며 모델 사용량의 토큰당으로 과금되므로, <code>count</code>가 100인 요청은 <code>count</code>가 20인 요청보다 대략 다섯 배의 비용이 듭니다. 필요한 해상도와 비용 사이의 균형을 맞춰 <code>count</code>를 선택하세요.</p></div>
+          </div>
+
+          <h2>Loss: 궤적 순위 매기기</h2>
+          <p>모든 예측은 <code>loss</code>를 담고 있습니다. 값이 낮을수록 모델이 그 궤적을 더 전형적이라고 — 이력을 고려할 때 기대한 바에 더 부합한다고 — 판단했음을 의미합니다. loss가 높은 경로도 여전히 유효한 샘플이며, 단지 덜 중심적일 뿐입니다.</p>
+          <p>대표 궤적 하나를 고르거나 집합을 요약할 때의 가중치로 <code>loss</code>를 사용하세요. 가장 전형적인 경로를 가져오려면:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>다변량 예측</h2>
+          <p>프로필이 여러 시계열 이름을 읽는 경우, 각 예측 행은 이름마다 하나의 필드를 담습니다 — 시계열이 공동으로 예측되므로 한 행 내에서 값들이 서로 일관성을 유지합니다. <code>kw</code>와 <code>price</code>를 함께 읽는 프로필은 다음과 같은 행을 반환합니다:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>공개 데이터 프로필</h2>
+          <p>여러분이 따로 설정할 필요 없이 Temporis가 관리하는 공유 프로필을 대상으로 예측할 수 있습니다 — 공개 이름을 <code>data_profile</code>로 전달하기만 하면 됩니다:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>응답 형태는 동일합니다. 각 행의 시계열 필드는 해당 공개 프로필이 읽는 것과 일치합니다.</p>
+
+          <h2>관련 항목</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">예측 샘플 다루기 →</p><p class="doc-card-desc">궤적 집합을 구간, 중앙값, 의사결정으로 변환합니다.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict 레퍼런스 →</p><p class="doc-card-desc">모든 상태 코드를 포함한 전체 요청 및 응답 스키마입니다.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로필 →</p><p class="doc-card-desc">각 예측이 무엇을 읽을지 결정하는 레시피를 구성합니다.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

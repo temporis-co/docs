@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>المصادقة — توثيق Temporis</title>
+  <meta name="description" content="إنشاء رموز الحامل (bearer tokens) التي تصادق كل طلب إلى واجهة Temporis البرمجية وإرسالها وحمايتها.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>مرجع الواجهة البرمجية</span><span class="sep">/</span><span>المصادقة</span></nav>
+          <h1>المصادقة</h1>
+          <p class="docs-lead">يصادَق كل طلب إلى واجهة Temporis البرمجية برمز حامل (bearer token). إليك كيفية إنشائه وإرساله والحفاظ على أمانه.</p>
+
+          <h2>رموز الوصول</h2>
+          <p>تنشئ رموز الوصول في لوحة التحكم، ضمن <a href="https://platform.temporis.co">رموز الوصول</a>. الرمز عبارة عن سلسلة عشوائية طويلة مسبوقة بـ <code>ts_</code>.</p>
+          <p>يُعرَض الرمز الكامل <strong>مرة واحدة</strong>، في لحظة إنشائه. لا يخزّن Temporis سوى تجزئة (hash) منه على الخادم، ولا يخزّن الرمز نفسه أبدًا. وهذا يعني أن الرمز المفقود لا يمكن استرجاعه — إذا فقدته، فاحذفه وأنشئ رمزًا جديدًا.</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">عامل الرموز معاملة كلمات المرور</div><p>يستطيع أي شخص يملك أحد رموزك أن يدخل البيانات ويشغّل التنبؤات — والتنبؤات تُحتسب على حسابك. فاحرص على حمايتها وفقًا لذلك.</p></div>
+          </div>
+
+          <h2>مصادقة طلب</h2>
+          <p>أرسل الرمز في ترويسة <code>Authorization</code> مع كل طلب، باستخدام نظام <code>Bearer</code>:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>تقرأ الأمثلة في كامل هذا التوثيق الرمز من متغير بيئة <code>TEMPORIS_TOKEN</code>، حتى لا يظهر السر أبدًا في الشيفرة المصدرية. صدّره مرة واحدة في صدفتك (shell):</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>ثم أرفقه بوصفه ترويسة:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>عند فشل المصادقة</h2>
+          <p>إذا كانت ترويسة <code>Authorization</code> مفقودة أو غير صحيحة التنسيق، أو كان الرمز غير معروف، تستجيب الواجهة البرمجية بالرمز HTTP 401 وجسم JSON يصف الخطأ الذي وقع:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>أما الترويسة المفقودة أو غير صحيحة التنسيق فتُرجع <code>{ "detail": "Missing access token." }</code> بدلًا من ذلك. وكلاهما من النوع 401. راجع <a href="../api/errors.html">الأخطاء ورموز الحالة</a> للاطلاع على القائمة الكاملة للاستجابات.</p>
+
+          <h2>الحفاظ على أمان الرموز</h2>
+          <p>بعض العادات تبقي رموزك بعيدة عن الأيدي الخاطئة:</p>
+          <ul>
+            <li><strong>لا تودِع الرموز أبدًا في نظام إدارة الشيفرة المصدرية</strong>، ولا تضعها أبدًا في الشيفرة من جهة العميل. فالمتصفحات وتطبيقات الجوال تشحن شيفرتها المصدرية إلى المستخدمين.</li>
+            <li><strong>اقرأ الرموز من متغيرات البيئة أو من مدير أسرار.</strong> أبقها بعيدة عن السجلات ولقطات الشاشة والتذاكر.</li>
+            <li><strong>أنشئ رمزًا منفصلًا لكل خدمة</strong> حتى تتمكن من إبطال واحد دون تعطيل الباقي.</li>
+            <li><strong>احذف رمزًا في لوحة التحكم لإبطاله فورًا.</strong> يسري الحذف على الفور — وأول طلب يستخدم ذلك الرمز يحصل على 401.</li>
+          </ul>
+
+          <h2>الخطوات التالية</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">إدخال السجلات →</p><p class="doc-card-desc">أرسل المشاهدات إلى مصدر بيانات.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">إنشاء تنبؤ →</p><p class="doc-card-desc">استخرج عيّنات من المستقبل من ملف بيانات.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">البدء السريع →</p><p class="doc-card-desc">انتقل من الرمز إلى أول تنبؤ.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

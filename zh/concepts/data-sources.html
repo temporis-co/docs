@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据源 — Temporis 文档</title>
+  <meta name="description" content="数据源是存放你原始观测值的地方。了解 Temporis 的数据模型，以及如何将数据流式写入其中。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>概念</span><span class="sep">/</span><span>数据源</span></nav>
+          <h1>数据源</h1>
+          <p class="docs-lead">数据源是存放你原始观测值的地方。本页介绍 Temporis 的数据模型，以及如何妥善地将数据发送进去。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>你在控制台中创建一次数据源，随后便可在观测值产生时通过 API 将它们流式写入其中。</p></div>
+          </div>
+
+          <h2>数据模型</h2>
+          <p>Temporis 以行的形式存储数据。每个观测值都是一个三元组：某物是<em>何时</em>被测量的、被测量的是<em>什么</em>，以及你测得的那个<em>数字</em>。</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">以<strong>秒</strong>为单位的 Unix 时间（整数）。观测发生的时刻。</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">该数值所属的序列——例如 <code>orders</code> 或 <code>revenue</code>。</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">一个数字。浮点数也可以。</div></div>
+          </div>
+
+          <p>单个数据源可以并排容纳许多命名序列。<code>name</code> 字段用于将它们区分开。你的数据与其他每位客户的数据相互隔离——一个数据源只属于你一人。</p>
+
+          <h2>创建数据源</h2>
+          <p>你在控制台的 <strong>Data Sources</strong> 下创建数据源。给它起个名字，它就可以接收数据了。</p>
+
+          <p>名称遵循以下几条规则：</p>
+          <ul>
+            <li>以小写字母开头。</li>
+            <li>只使用小写字母、数字和下划线。</li>
+            <li>最多 48 个字符。</li>
+          </ul>
+
+          <p>因此 <code>store_metrics</code> 和 <code>grid_load_eu</code> 是有效的；而 <code>Store-Metrics</code> 和 <code>2024data</code> 则无效。一个刚创建的数据源在你向它发送观测值之前是空的。</p>
+
+          <h2>发送观测值</h2>
+          <p>你通过导入端点添加数据。每次调用都携带目标 <code>data_source</code> 和一组 <code>records</code>。这里我们向 <code>store_metrics</code> 推送几条 <code>orders</code> 读数。</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>一次成功的导入会返回 <strong>HTTP 204 No Content</strong>，响应体为空——没有什么内容可读回，这些行只是被存储起来。完整的请求和错误详情，参见<a href="../api/ingest.html">导入参考</a>。</p>
+
+          <h2>一个数据源中的多条序列</h2>
+          <p>你并不限于每个数据源只放一条序列。向同一个 <code>data_source</code> 发送不同的 <code>name</code> 值，它们会作为各自独立的序列共存。一家门店可能在 <code>store_metrics</code> 中同时跟踪订单、营收和访客数。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>把相关的序列放在一起既方便，又便于你日后对它们进行联合预测。<a href="data-profiles.html">数据画像</a>正是你选择实际读取其中哪些 name 的地方。</p>
+
+          <h2>更新与回填</h2>
+          <p>upsert 键是 <code>(timestamp, name)</code> 这一对。发送一条 timestamp 和 name 都已存在的记录会<strong>覆盖</strong>已存储的值，而不是添加一个重复项。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">回填和重试是安全的</div><p>由于写入在 <code>(timestamp, name)</code> 上是幂等的，你可以在网络抖动后重放一个批次、纠正一个错误读数，或以任意顺序加载数月的历史——每个桶最终得到的值始终相同。</p></div>
+          </div>
+
+          <h2>归档</h2>
+          <p>当一个数据源不再收集新数据时，你可以在控制台中将它归档。归档会停止进一步的导入：针对已归档数据源的请求会返回 <strong>HTTP 409</strong> <code>"Data source is archived."</code></p>
+
+          <p>归档是非破坏性的。现有数据原封不动，任何基于该数据源构建的数据画像也会继续针对已存储的数据正常工作。</p>
+
+          <h2>后续步骤</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">数据画像 →</p><p class="doc-card-desc">把数据源的原始序列变成你可以用来预测的对象。</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">导入 API →</p><p class="doc-card-desc">导入端点及其响应的完整参考。</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">准备数据 →</p><p class="doc-card-desc">关于如何录入干净、可用于预测的序列的实用建议。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

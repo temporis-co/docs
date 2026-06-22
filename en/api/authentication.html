@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authentication — Temporis Docs</title>
+  <meta name="description" content="Create, send, and safeguard the bearer tokens that authenticate every Temporis API request.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>API reference</span><span class="sep">/</span><span>Authentication</span></nav>
+          <h1>Authentication</h1>
+          <p class="docs-lead">Every Temporis API request authenticates with a bearer token. Here's how to create one, send it, and keep it safe.</p>
+
+          <h2>Access tokens</h2>
+          <p>You create access tokens in the dashboard, under <a href="https://platform.temporis.co">Access Tokens</a>. A token is a long random string prefixed with <code>ts_</code>.</p>
+          <p>The full token is shown <strong>once</strong>, at the moment you create it. Temporis stores only a hash of it server-side, never the token itself. That means a lost token cannot be recovered — if you lose it, delete it and create a new one.</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">Treat tokens like passwords</div><p>Anyone holding one of your tokens can ingest data and run predictions — and predictions are billed to your account. Guard them accordingly.</p></div>
+          </div>
+
+          <h2>Authenticating a request</h2>
+          <p>Send the token in the <code>Authorization</code> header on every request, using the <code>Bearer</code> scheme:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>The examples throughout these docs read the token from a <code>TEMPORIS_TOKEN</code> environment variable, so the secret never appears in source. Export it once in your shell:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>Then attach it as a header:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>When authentication fails</h2>
+          <p>If the <code>Authorization</code> header is missing or malformed, or the token is unknown, the API responds with HTTP 401 and a JSON body describing what went wrong:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>A missing or malformed header returns <code>{ "detail": "Missing access token." }</code> instead. Both are 401s. See <a href="../api/errors.html">Errors &amp; status codes</a> for the full list of responses.</p>
+
+          <h2>Keeping tokens safe</h2>
+          <p>A few habits keep your tokens out of the wrong hands:</p>
+          <ul>
+            <li><strong>Never commit tokens to source control</strong>, and never put them in client-side code. Browsers and mobile apps ship their source to users.</li>
+            <li><strong>Read tokens from environment variables or a secrets manager.</strong> Keep them out of logs, screenshots, and tickets.</li>
+            <li><strong>Create a separate token per service</strong> so you can revoke one without disrupting the others.</li>
+            <li><strong>Delete a token in the dashboard to revoke it instantly.</strong> Deletion takes effect immediately — the next request using that token gets a 401.</li>
+          </ul>
+
+          <h2>Next steps</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingest records →</p><p class="doc-card-desc">Send observations into a data source.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Create a prediction →</p><p class="doc-card-desc">Draw sampled futures from a data profile.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Quickstart →</p><p class="doc-card-desc">Go from token to first forecast.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">On this page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

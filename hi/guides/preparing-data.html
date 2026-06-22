@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>अपना डेटा तैयार करना — Temporis Docs</title>
+  <meta name="description" content="अपने time-series इतिहास को एक साफ, सुसंगत आकार में Temporis में कैसे लाएँ जिसे मॉडल अच्छी तरह पढ़ सके।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guides</span><span class="sep">/</span><span>अपना डेटा तैयार करना</span></nav>
+          <h1>अपना डेटा तैयार करना</h1>
+          <p class="docs-lead">अच्छे पूर्वानुमान साफ, सुसंगत इनपुट से शुरू होते हैं। यह गाइड बताती है कि अपने इतिहास को एक ऐसे आकार में Temporis में कैसे लाएँ जिसे वह अच्छी तरह पढ़ सके।</p>
+
+          <h2>लगातार Unix seconds का इस्तेमाल करें</h2>
+          <p>आप जो भी timestamp भेजते हैं वह <strong>Unix seconds</strong> की एक पूर्णांक गिनती होती है — 1970-01-01 00:00:00 UTC के बाद बीते सेकंडों की संख्या। मिलीसेकंड नहीं, और न ही कोई ISO date string। अगर आपका स्रोत सिस्टम आपको मिलीसेकंड देता है, तो भेजने से पहले 1000 से भाग दें।</p>
+          <p>एक timezone अनुशासन चुनें और उससे कभी विचलित न हों। सबसे सरल नियम जो हमेशा काम करता है: <strong>सब कुछ UTC में संग्रहित करें</strong>। Unix seconds स्वभाव से UTC होते हैं, इसलिए जब तक आप भेजने से पहले हर स्थानीय timestamp को उसके असली UTC क्षण में बदलते हैं, आपकी series आंतरिक रूप से सुसंगत रहती है। एक ही series में local-time और UTC मानों को मिलाने से बिंदु चुपचाप इधर-उधर खिसक जाते हैं और मॉडल जो दैनिक पैटर्न सीखता है वह बिगड़ जाता है।</p>
+          <p>आपके timestamps को गोल संख्याओं पर आना ज़रूरी नहीं है। एक data profile का <code>interval</code> अवलोकनों को एक नियमित ग्रिड पर स्नैप कर देता है — <code>hourly_orders</code> profile के लिए हर बिंदु को निकटतम घंटे में बकेट कर दिया जाता है। आप वह असली क्षण देते हैं जब प्रत्येक अवलोकन हुआ; संरेखण को profile संभालती है।</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">एक त्वरित रूपांतरण</div><p>Python में, <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> आपको एक स्पष्ट UTC क्षण के लिए Unix seconds देता है। हमेशा एक timezone जोड़ें ताकि रूपांतरण निःसंदेह हो।</p></div>
+          </div>
+
+          <h2>इतिहास को बैचों में भेजें</h2>
+          <p>आपके पास भेजने के लिए शायद ही कभी एक अवलोकन होता है — आपके पास महीनों या वर्षों का होता है। ingest endpoint प्रति अनुरोध कई records लेता है, इसलिए अपने backfill को कुछ हज़ार records के बैचों में बाँटें और उन्हें एक-एक record के बजाय एक लूप में पोस्ट करें।</p>
+          <p>Ingestion <strong>idempotent</strong> है। upsert कुंजी <code>(timestamp, name)</code> है, इसलिए जो record आप पहले ही भेज चुके हैं उसे फिर से भेजना उसे उसी मान से अधिलेखित कर देता है — एक no-op। इसका मतलब है कि एक backfill को फिर से चलाना सुरक्षित है: अगर कोई बैच बीच में विफल हो जाता है या आपकी script क्रैश हो जाती है, तो बस उसे फिर से शुरू करें। आप डुप्लिकेट नहीं बनाएँगे।</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>एक सफल ingest <strong>HTTP 204 No Content</strong> के साथ एक खाली body लौटाता है, इसलिए पार्स करने के लिए कुछ नहीं होता — बस status की पुष्टि करें। पूरे अनुरोध के आकार के लिए <a href="../api/ingest.html">ingest reference</a> देखें।</p>
+
+          <h2>मॉडल को पर्याप्त इतिहास दें</h2>
+          <p>एक profile तब तक पूर्वानुमान नहीं दे सकती जब तक वह <strong>ready</strong> न हो जाए — Temporis को normalization आँकड़ों की गणना करने के लिए पर्याप्त इतिहास चाहिए जिनके माध्यम से वह आपकी series पढ़ती है। और हर पूर्वानुमान को कम से कम <code>min_patches</code> जितने हाल के संदर्भ की ज़रूरत होती है, वरना अनुरोध <strong>409 "Not enough data for this data profile."</strong> लौटाता है।</p>
+          <p>व्यावहारिक नियम: <strong>संदेह हो तो ज़्यादा इतिहास भेजें।</strong> ज़्यादा इतिहास एक profile को ready बनने देता है, <code>min_patches</code> को आराम से पार करता है, और मॉडल को सीखने के लिए ज़्यादा मौसमी चक्र देता है। context window जितने का उपयोग करता है उससे अधिक भेजने का कोई दंड नहीं है — <code>num_patches</code> से परे पुराने बिंदु predict समय पर बस नहीं पढ़े जाते।</p>
+          <p>यह जानने के लिए कि <code>min_patches</code>, <code>num_patches</code>, और "ready" का क्या अर्थ है और वे आपके <code>interval</code> से कैसे संबंधित हैं, <a href="../concepts/data-profiles.html">Data profiles</a> पढ़ें।</p>
+
+          <h2>अनियमित timestamps और अंतराल</h2>
+          <p>असली डेटा गंदा होता है। सेंसर एक रीडिंग छोड़ देते हैं, कोई job कुछ मिनट देर से चलती है, छुट्टी के दिन एक स्टोर बंद रहता है। आपको इनमें से किसी को हाथ से साफ करने की ज़रूरत नहीं है — profile का resampling चरण इसे संभालता है।</p>
+          <p><code>interval</code> आपके अवलोकनों को एक नियमित ग्रिड पर बकेट करता है, जो <em>थोड़े अनियमित</em> timestamps को अवशोषित कर लेता है: 10:58 पर आने वाली एक रीडिंग और 11:03 पर आने वाली दोनों 11:00 के बकेट में आ जाती हैं। <em>गायब</em> बकेटों के लिए, <code>fill_limit</code> तय करता है कि हार मानने से पहले Temporis कितने लगातार खाली बकेटों को forward-fill करेगा। एक छोटा अंतराल पाट दिया जाता है; एक लंबे अंतराल को एक छेद के रूप में छोड़ दिया जाता है और उन पंक्तियों को गढ़ने के बजाय हटा दिया जाता है।</p>
+          <p>अगर आपकी series में <em>आवर्ती</em> मृत समय है — ऐसे घंटे जब कुछ भी संभवतः नहीं हो सकता — तो इसे गायब डेटा मानें ही नहीं। एक <code>exclude_window</code> उस दिन-के-समय की सीमा को मास्क कर देता है ताकि वह series को कभी विकृत न करे। यह एक profile सेटिंग है, जिसे <a href="../concepts/data-profiles.html">Data profiles</a> में समझाया गया है।</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>आप कच्चे अवलोकन वैसे ही भेजते हैं जैसे आपके पास हैं। वे कहाँ आते हैं, अंतराल कैसे भरे जाते हैं, और किस मृत समय को नज़रअंदाज़ किया जाता है — ये निर्णय profile करती है, न कि वे रूपांतरण जो आप डेटा में पकाते हैं।</p></div>
+          </div>
+
+          <h2>कई series को संरेखित करना</h2>
+          <p>एक profile एक साथ कई series पढ़ सकती है — एक multivariate profile जो उनका संयुक्त रूप से पूर्वानुमान लगाती है। इसके अच्छे से काम करने के लिए, series को एक <strong>साझा timeline</strong> चाहिए: प्रत्येक series का अवलोकन समान timestamps के सेट पर भेजें ताकि bucketing के बाद पंक्तियाँ मेल खाएँ।</p>
+          <p>आप एक ही ingest अनुरोध में कई series भेज सकते हैं — बस प्रत्येक timestamp पर प्रति series एक record शामिल करें। यहाँ दो series, <code>orders</code> और <code>visitors</code>, एक ही timeline साझा करती हैं:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>अगर एक series ऐसे timestamp पर गायब है जहाँ दूसरी मौजूद है, तो उस बकेट को किसी भी अन्य अंतराल की तरह <code>fill_limit</code> के अनुसार भरा जाता है — इसलिए कुछ छिटपुट बिंदु संरेखण को नहीं तोड़ेंगे, पर सबसे साफ संयुक्त पूर्वानुमान तब मिलेगा जब series एक ही घड़ी पर चलें।</p>
+
+          <h2>सुधार और backfills</h2>
+          <p>कोई गलत मान मिला? किसी तिमाही को फिर से बता रहे हैं? आप कुछ खास हटाते या पैच नहीं करते — आप बस सुधारा हुआ record फिर से भेजते हैं। चूँकि upsert कुंजी <code>(timestamp, name)</code> है, किसी मौजूदा timestamp+name पर एक नया <code>value</code> भेजना पुराने को <strong>अधिलेखित</strong> कर देता है।</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">फिर से चलाना दुष्प्रभावों से मुक्त है</div><p>चूँकि हर ingest एक idempotent upsert है, एक सुधारा हुआ backfill उस डेटा के साथ सुरक्षित रूप से ओवरलैप कर सकता है जो आप पहले ही भेज चुके हैं। अगर यह गणना करने से आसान हो कि कौन से बिंदु बदले, तो पूरी प्रभावित सीमा को फिर से पोस्ट करें।</p></div>
+          </div>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Data sources →</p><p class="doc-card-desc">(timestamp, name, value) की संग्रहित पंक्तियाँ कैसे व्यवस्थित होती हैं।</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">वह नुस्खा जो एक data source को पढ़ता है: interval, patches, अंतराल।</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">एक data profile को ट्यून करना →</p><p class="doc-card-desc">प्रत्येक सेटिंग को अपने डेटा की लय से मिलाएँ।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पृष्ठ पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

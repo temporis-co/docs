@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>데이터 준비하기 — Temporis Docs</title>
+  <meta name="description" content="시계열 이력 데이터를 모델이 잘 읽을 수 있도록 깔끔하고 일관된 형태로 Temporis에 넣는 방법.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>가이드</span><span class="sep">/</span><span>데이터 준비하기</span></nav>
+          <h1>데이터 준비하기</h1>
+          <p class="docs-lead">좋은 예측은 깨끗하고 일관된 입력에서 시작됩니다. 이 가이드는 이력 데이터를 모델이 잘 읽을 수 있는 형태로 Temporis에 넣는 방법을 다룹니다.</p>
+
+          <h2>Unix 초 단위를 일관되게 사용하기</h2>
+          <p>보내는 모든 타임스탬프는 <strong>Unix 초</strong>를 나타내는 정수입니다 — 즉, 1970-01-01 00:00:00 UTC 이후로 경과한 초의 개수입니다. 밀리초가 아니며, ISO 날짜 문자열도 아닙니다. 소스 시스템이 밀리초를 제공한다면 보내기 전에 1000으로 나누세요.</p>
+          <p>하나의 타임존 규칙을 정하고 절대 벗어나지 마세요. 항상 통하는 가장 간단한 규칙은 <strong>모든 것을 UTC로 저장하는 것</strong>입니다. Unix 초는 본질적으로 UTC이므로, 각 로컬 타임스탬프를 보내기 전에 실제 UTC 시점으로 변환하기만 하면 시계열이 내부적으로 일관되게 유지됩니다. 같은 시계열에 로컬 시간과 UTC 값을 섞으면 데이터 포인트가 조용히 이동하면서 모델이 학습하는 일일 패턴을 손상시킵니다.</p>
+          <p>타임스탬프가 딱 떨어지는 값일 필요는 없습니다. 데이터 프로파일의 <code>interval</code>이 관측값을 일정한 격자에 맞춰 정렬합니다 — <code>hourly_orders</code> 프로파일의 경우 모든 포인트가 가장 가까운 시(hour)로 버킷팅됩니다. 각 관측이 실제로 발생한 시점을 그대로 제공하면 정렬은 프로파일이 처리합니다.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">간단한 변환</div><p>Python에서 <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code>는 명시적인 UTC 시점에 대한 Unix 초를 반환합니다. 변환이 모호하지 않도록 항상 타임존을 지정하세요.</p></div>
+          </div>
+
+          <h2>이력 데이터를 배치로 보내기</h2>
+          <p>보낼 관측값이 하나뿐인 경우는 드뭅니다 — 보통은 몇 달치 또는 몇 년치가 있습니다. 인제스트 엔드포인트는 요청당 여러 레코드를 받으므로, 백필을 수천 개 단위의 배치로 나눠 한 번에 하나씩 보내는 대신 루프로 게시하세요.</p>
+          <p>인제스트는 <strong>멱등적(idempotent)</strong>입니다. 업서트 키가 <code>(timestamp, name)</code>이므로, 이미 보낸 레코드를 다시 보내면 같은 값으로 덮어쓸 뿐 — 아무 작업도 일어나지 않습니다(no-op). 따라서 백필은 다시 실행해도 안전합니다. 배치가 도중에 실패하거나 스크립트가 죽었다면 그냥 다시 시작하면 됩니다. 중복이 생기지 않습니다.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>성공적인 인제스트는 본문이 비어 있는 <strong>HTTP 204 No Content</strong>를 반환하므로 파싱할 것이 없습니다 — 상태만 확인하면 됩니다. 전체 요청 형태는 <a href="../api/ingest.html">인제스트 레퍼런스</a>를 참고하세요.</p>
+
+          <h2>모델에 충분한 이력 제공하기</h2>
+          <p>프로파일은 <strong>준비(ready)</strong> 상태가 되기 전까지는 예측을 제공할 수 없습니다 — Temporis는 시계열을 읽는 데 쓰는 정규화 통계를 계산하기에 충분한 이력이 필요합니다. 또한 각 예측에는 최소 <code>min_patches</code>만큼의 최근 컨텍스트가 필요하며, 그렇지 않으면 요청은 <strong>409 "Not enough data for this data profile."</strong>를 반환합니다.</p>
+          <p>실용적인 규칙: <strong>확신이 서지 않으면 이력을 더 보내세요.</strong> 이력이 많을수록 프로파일이 준비 상태가 되고, <code>min_patches</code>를 여유 있게 넘기며, 모델이 학습할 계절 주기도 더 많아집니다. 컨텍스트 윈도가 사용하는 양보다 더 많이 보내도 불이익은 없습니다 — <code>num_patches</code>를 넘어선 오래된 포인트는 예측 시점에 그저 읽히지 않을 뿐입니다.</p>
+          <p><code>min_patches</code>, <code>num_patches</code>, 그리고 "준비" 상태가 무엇을 의미하며 <code>interval</code>과 어떻게 관련되는지 알아보려면 <a href="../concepts/data-profiles.html">데이터 프로파일</a>을 읽어보세요.</p>
+
+          <h2>불규칙한 타임스탬프와 결측</h2>
+          <p>실제 데이터는 지저분합니다. 센서가 측정을 건너뛰고, 작업이 몇 분 늦게 실행되고, 휴일에는 매장이 문을 닫습니다. 이런 것을 손으로 정리할 필요는 없습니다 — 프로파일의 리샘플링 단계가 처리합니다.</p>
+          <p><code>interval</code>은 관측값을 일정한 격자에 버킷팅하여 <em>약간 불규칙한</em> 타임스탬프를 흡수합니다: 10:58에 들어온 측정값과 11:03에 들어온 측정값은 모두 11:00 버킷에 들어갑니다. <em>비어 있는</em> 버킷의 경우, <code>fill_limit</code>이 Temporis가 포기하기 전에 연속된 빈 버킷을 몇 개까지 전방 채움(forward-fill)할지를 설정합니다. 짧은 결측은 메워지고, 긴 결측은 구멍으로 남아 해당 행들은 만들어 내지 않고 버려집니다.</p>
+          <p>시계열에 <em>반복되는</em> 비가동 시간이 있다면 — 아무 일도 일어날 수 없는 시간대라면 — 이를 결측 데이터로 취급하지 마세요. <code>exclude_window</code>는 해당 하루 중 시간대 범위를 마스킹하여 시계열을 왜곡하지 않게 합니다. 이는 프로파일 설정으로, <a href="../concepts/data-profiles.html">데이터 프로파일</a>에서 다룹니다.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>원시 관측값은 가진 그대로 보냅니다. 그 값들이 어디에 들어가는지, 결측이 어떻게 채워지는지, 어떤 비가동 시간이 무시되는지는 프로파일이 내리는 결정이지 — 데이터에 미리 적용해 두는 변환이 아닙니다.</p></div>
+          </div>
+
+          <h2>여러 시계열 정렬하기</h2>
+          <p>프로파일은 여러 시계열을 한 번에 읽을 수 있습니다 — 이들을 함께 예측하는 다변량 프로파일입니다. 이것이 잘 동작하려면 시계열에 <strong>공통 타임라인</strong>이 필요합니다: 각 시계열의 관측값을 동일한 타임스탬프 집합으로 보내, 버킷팅 후 행들이 맞아떨어지도록 하세요.</p>
+          <p>한 번의 인제스트 요청으로 여러 시계열을 보낼 수 있습니다 — 각 타임스탬프마다 시계열별 레코드를 포함하기만 하면 됩니다. 다음은 두 시계열 <code>orders</code>와 <code>visitors</code>가 같은 타임라인을 공유하는 예입니다:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>한 시계열이 다른 시계열은 존재하는 타임스탬프에서 누락되어 있다면, 그 버킷은 다른 결측과 마찬가지로 <code>fill_limit</code>에 따라 채워집니다 — 따라서 몇 개 빠진다고 정렬이 깨지지는 않지만, 시계열들이 같은 시계(clock)로 움직일 때 가장 깔끔한 결합 예측을 얻을 수 있습니다.</p>
+
+          <h2>정정과 백필</h2>
+          <p>잘못된 값을 발견했나요? 분기 실적을 재작성하나요? 특별히 삭제하거나 패치할 것은 없습니다 — 정정된 레코드를 다시 보내기만 하면 됩니다. 업서트 키가 <code>(timestamp, name)</code>이므로, 기존 timestamp+name에 새로운 <code>value</code>를 보내면 이전 값을 <strong>덮어씁니다</strong>.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">다시 실행해도 부작용이 없습니다</div><p>모든 인제스트가 멱등적인 업서트이므로, 정정 백필은 이미 보낸 데이터와 겹쳐도 안전합니다. 정확히 어떤 포인트가 바뀌었는지 계산하는 것보다 쉽다면, 영향받은 범위 전체를 다시 게시하세요.</p></div>
+          </div>
+
+          <h2>관련 문서</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">데이터 소스 →</p><p class="doc-card-desc">저장된 (timestamp, name, value) 행들이 어떻게 구성되는지.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로파일 →</p><p class="doc-card-desc">데이터 소스를 읽는 레시피: interval, 패치, 결측.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">데이터 프로파일 튜닝하기 →</p><p class="doc-card-desc">각 설정을 데이터의 리듬에 맞추세요.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

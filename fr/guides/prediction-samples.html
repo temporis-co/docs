@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Travailler avec les échantillons de prédiction — Documentation Temporis</title>
+  <meta name="description" content="Transformez les nombreuses trajectoires échantillonnées de /v1/predict en une prévision ponctuelle et une bande de confiance.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Guides</span><span class="sep">/</span><span>Travailler avec les échantillons</span></nav>
+          <h1>Travailler avec les échantillons de prédiction</h1>
+          <p class="docs-lead"><code>/v1/predict</code> renvoie de nombreuses trajectoires échantillonnées. Ce guide les transforme en ce dont vous avez réellement besoin : une prévision ponctuelle et une bande de confiance.</p>
+
+          <h2>Pourquoi de nombreuses trajectoires</h2>
+          <p>Temporis génère des prévisions par échantillonnage — il lit votre historique et tire une continuation plausible, à la manière dont un modèle de langage prolonge un texte. Chaque tirage est <strong>un futur possible</strong>, pas le futur. Demandez <code>count</code> tirages et vous obtenez <code>count</code> trajectoires indépendantes dans <code>predictions</code>.</p>
+          <p>L'intérêt d'en avoir plusieurs est la <strong>dispersion</strong>. Là où les trajectoires s'accordent, le modèle est confiant ; là où elles s'évasent, le futur est véritablement incertain. Cette dispersion est votre estimation d'incertitude — c'est pourquoi un seul échantillon est rarement ce que vous voulez.</p>
+          <p>Réglez <code>count</code> assez haut pour résoudre cette dispersion. Une poignée de tirages donne une image instable et peu fiable ; quelque part dans la plage de <strong>20 à 100</strong> résout bien la distribution pour la plupart des séries. Plus est plus lisse mais pas gratuit.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Count coûte des jetons</div><p>La prédiction est facturée par jeton du modèle, et chaque trajectoire génère un horizon complet de jetons. Doubler <code>count</code> double à peu près le coût de l'appel. Utilisez assez d'échantillons pour voir clairement la dispersion, puis arrêtez.</p></div>
+          </div>
+
+          <h2>Une prévision ponctuelle</h2>
+          <p>Pour réduire les échantillons à un seul nombre par timestamp futur, <strong>agrégez à travers les trajectoires à chaque pas de temps</strong>. La <strong>médiane</strong> est une bonne valeur par défaut — elle est robuste face à la trajectoire occasionnellement aberrante ; la moyenne fonctionne aussi si vous la préférez.</p>
+          <p>Les lignes <code>data</code> de chaque prédiction partagent les mêmes timestamps dans le même ordre, donc vous pouvez les aligner par index. Ici, nous demandons 50 échantillons du profil <code>hourly_orders</code> et calculons une prévision médiane d'<code>orders</code> par timestamp :</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>Bandes de confiance</h2>
+          <p>La médiane vous donne une ligne centrale ; une bande vous donne la plage autour d'elle. Calculez des <strong>quantiles par timestamp</strong> à travers les échantillons — les 10e, 50e et 90e centiles sont un choix courant. Le résultat est trois lignes : un bord bas (p10), le centre (p50) et un bord haut (p90).</p>
+          <p>Lisez la bande comme « environ 80 % des futurs échantillonnés se situent entre p10 et p90 à ce timestamp ». Une bande étroite signifie que le modèle est confiant ; une bande qui s'élargit à mesure que vous regardez plus loin est le modèle vous disant honnêtement que le futur lointain est moins certain que le futur proche.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>Choisir count, temperature, top_p en pratique</h2>
+          <p>Trois boutons façonnent les échantillons, et ils font des travaux différents :</p>
+          <ul>
+            <li><code>count</code> contrôle la <strong>résolution</strong> — la finesse avec laquelle la dispersion est échantillonnée. Il ne change pas la forme de la distribution, seulement la clarté avec laquelle vous la voyez.</li>
+            <li><code>temperature</code> (supérieure à 0) contrôle la <strong>dispersion</strong> — des valeurs plus élevées tirent des futurs plus divers et de plus large amplitude ; des valeurs plus faibles regroupent les échantillons près du chemin le plus probable du modèle. Environ <code>1.0</code> est neutre.</li>
+            <li><code>top_p</code> (0 à 1) <strong>rogne les queues</strong> — le baisser coupe les extrêmes improbables, donc vous obtenez moins de sauts surprenants ; <code>1.0</code> conserve toute la distribution.</li>
+          </ul>
+          <p>Points de départ raisonnables, selon le degré de nervosité de votre série :</p>
+
+          <div class="table-wrap"><table><thead><tr><th>Caractère de la série</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>Stable, lisse (demande régulière)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>Typique</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>Volatile, en pics (prix, trafic en rafales)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>Considérez-les comme un point de départ. Tracez une bande, regardez si elle est trop serrée pour être honnête ou si large qu'elle est inutile, et ajustez d'abord <code>temperature</code>.</p>
+
+          <h2>Classer par loss</h2>
+          <p>Parfois, vous voulez un seul chemin représentatif plutôt qu'une bande — pour une démo, une vérification de cohérence ou un rapide « à quoi ressemble un futur typique ». Chaque trajectoire porte une <code>loss</code>, et <strong>une loss plus faible signifie que le modèle a jugé ce chemin plus typique</strong>. Triez par elle et prenez le début de la liste :</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Pour une prévision réelle, préférez la médiane et une bande à toute trajectoire unique — le chemin à plus faible loss est un futur plausible, pas une moyenne de ceux-ci. Le classement est surtout utile pour choisir un exemple propre ou filtrer les valeurs aberrantes.</p></div>
+          </div>
+
+          <h2>Liens connexes</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prédictions →</p><p class="doc-card-desc">Comment l'échantillonnage transforme l'historique en une prévision probabiliste.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">API Predict →</p><p class="doc-card-desc">La référence complète de requête et de réponse.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajuster un profil de données →</p><p class="doc-card-desc">Obtenez la bonne prévision sous-jacente avant de l'échantillonner.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Sur cette page</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

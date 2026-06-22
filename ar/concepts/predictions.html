@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>التنبؤات وأخذ العيّنات — توثيق Temporis</title>
+  <meta name="description" content="يُعيد طلب التنبؤ عدّة مستقبلات ممكنة. تعرّف على كيفية قراءة الاستجابة وكيف يصوغها count وtemperature وtop_p.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>المفاهيم</span><span class="sep">/</span><span>التنبؤات وأخذ العيّنات</span></nav>
+          <h1>التنبؤات وأخذ العيّنات</h1>
+          <p class="docs-lead">يُعيد طلب التنبؤ عدّة مستقبلات ممكنة لا واحداً. تشرح هذه الصفحة كيفية قراءة الاستجابة وكيف تصوغها ضوابط أخذ العيّنات. وللاطلاع على المخطط الدقيق راجع <a href="../api/predict.html">مرجع predict</a>.</p>
+
+          <h2>تشريح الطلب</h2>
+          <p>تتنبأ مقابل ملف بيانات، لا مقابل مصدر بيانات خام. فالملف يعرف سلفاً أي السلاسل يقرأ وكيف يرمّزها، فلا يلزم الطلب إلا أن يذكر أي ملف وكيفية أخذ العيّنات. تغطي ذلك أربعة حقول:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">سلسلة نصية</span><span class="param-req">مطلوب</span></div>
+              <p class="param-desc">اسم أحد ملفاتك، مثل <code>hourly_orders</code> — أو ملف عام.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">عدد صحيح</span><span class="param-req">مطلوب</span></div>
+              <p class="param-desc">كم مساراً مستقبلياً مستقلاً يُسحب. واحد على الأقل.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">رقم</span><span class="param-req">مطلوب</span></div>
+              <p class="param-desc">مدى تشتت العيّنات. يجب أن يكون أكبر من 0؛ ونحو 1.0 محايد.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">رقم</span><span class="param-req">مطلوب</span></div>
+              <p class="param-desc">عتبة قطع أخذ العيّنات النووي في النطاق من 0 إلى 1. والأدنى يقصّ الذيل غير المرجّح.</p>
+            </div>
+          </div>
+          <p>إليك طلباً لعشرين مساراً مقابل ملف <code>hourly_orders</code>:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>المرجع الكامل — كل حقل ورمز حالة ورسالة خطأ — موجود في <a href="../api/predict.html">مرجع نقطة نهاية predict</a>.</p>
+
+          <h2>قراءة الاستجابة</h2>
+          <p>يُعيد النداء الناجح HTTP 200 مع أربعة حقول على المستوى الأعلى:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">سلسلة نصية</span></div>
+              <p class="param-desc">معرّف سداسي عشري لهذا الطلب. احتفظ به للدعم ولسجلاتك الخاصة.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">سلسلة نصية</span></div>
+              <p class="param-desc">يردّد الملف الذي طلبته.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">عدد صحيح</span></div>
+              <p class="param-desc">ثواني يونكس لآخر طابع زمني <em>مرصود</em> يتابع منه التنبؤ. ويبدأ كل مسار بعد هذه النقطة مباشرةً.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">مصفوفة</span></div>
+              <p class="param-desc">مدخل واحد لكل مسار مأخوذ كعيّنة (طولها يساوي <code>count</code>). ويحمل كلٌّ منها قيمة <code>loss</code> ومصفوفة <code>data</code> من صفوف التنبؤ.</p>
+            </div>
+          </div>
+          <p>يعرض المثال أدناه اثنين من المسارات من تنبؤ <code>orders</code>. قيمة <code>interval</code> للملف هي 3600 و<code>patch_spacing</code> هي 2، فتتقدم الصفوف بمقدار <code>interval &times; patch_spacing</code> = 7200 ثانية (ساعتان):</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>لكل صف <code>timestamp</code> إضافةً إلى حقل واحد لكل سلسلة يقرؤها الملف — وهنا <code>orders</code> فحسب. وتتقدم الطوابع الزمنية بمقدار <code>interval &times; patch_spacing</code> ثانية، وهي المباعدة نفسها لكل مسار، فتستطيع محاذاة العيّنات صفاً بصف.</p>
+
+          <h2>ضوابط أخذ العيّنات</h2>
+          <p>تصوغ ثلاثة معاملات مجموعة المستقبلات التي تستعيدها. وهي تقايض الدقة والتنوع مقابل الكلفة والاستقرار.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>المعامل</th><th>ما الذي يفعله</th><th>القيمة النموذجية</th><th>ارفعه / اخفضه عندما</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>عدد المسارات المستقلة المسحوبة. عيّنات أكثر تحلّ التوزيع على نحو أفضل.</td><td>20 إلى 100</td><td>ارفعه لفترات أكثر نعومة؛ اخفضه لتقليص كلفة الرموز.</td></tr>
+              <tr><td><code>temperature</code></td><td>مدى تشتت العيّنات. الأعلى أكثر تنوعاً وأكثر عدم يقين؛ والأدنى يتجمّع قرب المسار الأرجح.</td><td>~1.0</td><td>ارفعه عندما تبدو التنبؤات ضيقة جداً؛ اخفضه عندما تتبعثر على نحو غير واقعي.</td></tr>
+              <tr><td><code>top_p</code></td><td>عتبة القطع النووي. تقصّ الذيل غير المرجّح قبل أخذ العيّنات.</td><td>0.9 إلى 1.0</td><td>اخفضه لكبح القفزات المفاجئة؛ ارفعه نحو 1.0 للإبقاء على التوزيع الكامل.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">الكلفة تتناسب مع count</div><p>تُولَّد كل عيّنة على نحو مستقل وتُحسب بحسب كل رمز من استخدام النموذج، فطلب بـ<code>count</code> 100 يكلّف نحو خمسة أمثال طلب بـ<code>count</code> 20. اختر <code>count</code> لتوازن الدقة التي تحتاجها مقابل الكلفة.</p></div>
+          </div>
+
+          <h2>الخسارة: ترتيب المسارات</h2>
+          <p>يحمل كل تنبؤ قيمة <code>loss</code>. الأدنى يعني أن النموذج عدّ ذلك المسار أكثر نمطية — أكثر اتساقاً مع ما توقّعه بالنظر إلى التاريخ. والمسارات ذات الخسارة الأعلى تبقى عيّنات صالحة؛ وهي فقط أقل مركزية.</p>
+          <p>استخدم <code>loss</code> لانتقاء مسار ممثِّل واحد، أو كوزن عند تلخيص المجموعة. ولالتقاط المسار الأكثر نمطية:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>التنبؤات متعدّدة المتغيّرات</h2>
+          <p>إذا قرأ ملف عدّة أسماء سلاسل، فإن كل صف تنبؤ يحمل حقلاً واحداً لكل اسم — تُتنبّأ السلاسل مجتمعةً، فتبقى قيمها متسقة داخل الصف. وملف يقرأ <code>kw</code> و<code>price</code> معاً يُعيد صفوفاً مثل:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>ملفات البيانات العامة</h2>
+          <p>تستطيع التنبؤ مقابل ملفات مشتركة يصونها Temporis، دون أي إعداد من جانبك — مرّر فقط الاسم العام كـ<code>data_profile</code>:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>شكل الاستجابة متطابق؛ وحقول السلاسل في كل صف تطابق ما يقرؤه الملف العام.</p>
+
+          <h2>ذات صلة</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">العمل مع عيّنات التنبؤ →</p><p class="doc-card-desc">حوّل مجموعة من المسارات إلى فترات ووسطاء وقرارات.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">مرجع Predict →</p><p class="doc-card-desc">مخطط الطلب والاستجابة الكامل، مع كل رمز حالة.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">ملفات البيانات →</p><p class="doc-card-desc">اضبط الوصفة التي تقرّر ما يقرؤه كل تنبؤ.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>レコードの取り込み — Temporis ドキュメント</title>
+  <meta name="description" content="ingest エンドポイントを使って Temporis のデータソースに観測値を送信する方法を、リクエストボディ、アップサート動作、エラーとともに解説します。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/ingest" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>API リファレンス</span><span class="sep">/</span><span>レコードの取り込み</span></nav>
+          <h1>レコードの取り込み</h1>
+          <p class="docs-lead">観測値をデータソースへ送信します。データソースはあらかじめ存在し(ダッシュボードで作成)、アーカイブされていない必要があります。</p>
+
+          <div class="endpoint"><span class="http-method post">POST</span><span class="path">/v1/data_sources/ingest</span></div>
+
+          <h2>リクエストボディ</h2>
+          <p>ボディには、対象のデータソース名と、レコードのバッチを指定します。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_source</span><span class="param-type">string</span><span class="param-req">必須</span></div>
+              <p class="param-desc">書き込み先となる、既存かつアーカイブされていないデータソースの名前。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">records</span><span class="param-type">array</span><span class="param-req">必須</span></div>
+              <p class="param-desc">保存するレコードのリスト。各レコードは、1 つの系列のある時点における 1 つの観測値です。</p>
+            </div>
+          </div>
+
+          <h3>レコードのフィールド</h3>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">timestamp</span><span class="param-type">integer</span><span class="param-req">必須</span></div>
+              <p class="param-desc">秒単位の Unix 時刻。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">name</span><span class="param-type">string</span><span class="param-req">必須</span></div>
+              <p class="param-desc">系列名。1 つのデータソースには、名前付きの系列を複数保持できます。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">value</span><span class="param-type">number</span><span class="param-req">必須</span></div>
+              <p class="param-desc">観測された値(整数または浮動小数点数)。</p>
+            </div>
+          </div>
+
+          <h2>リクエスト例</h2>
+          <p>以下は、環境変数からトークンを読み取り、4 件の <code>orders</code> の観測値を <code>store_metrics</code> データソースに書き込む例です:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718841600, "name": "orders", "value": 42 },
+      { "timestamp": 1718845200, "name": "orders", "value": 51 },
+      { "timestamp": 1718848800, "name": "orders", "value": 47 },
+      { "timestamp": 1718852400, "name": "orders", "value": 63 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718841600, "name": "orders", "value": 42},
+            {"timestamp": 1718845200, "name": "orders", "value": 51},
+            {"timestamp": 1718848800, "name": "orders", "value": 47},
+            {"timestamp": 1718852400, "name": "orders", "value": 63},
+        ],
+    },
+)
+resp.raise_for_status()  # 204 No Content on success</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718841600, name: "orders", value: 42 },
+      { timestamp: 1718845200, name: "orders", value: 51 },
+      { timestamp: 1718848800, name: "orders", value: 47 },
+      { timestamp: 1718852400, name: "orders", value: 63 },
+    ],
+  }),
+});</code></pre></div>
+            <div class="code-block-wrap" data-lang="Go"><pre class="code-block"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"os"
+)
+
+func main() {
+	body, _ := json.Marshal(map[string]any{
+		"data_source": "store_metrics",
+		"records": []map[string]any{
+			{"timestamp": 1718841600, "name": "orders", "value": 42},
+			{"timestamp": 1718845200, "name": "orders", "value": 51},
+			{"timestamp": 1718848800, "name": "orders", "value": 47},
+			{"timestamp": 1718852400, "name": "orders", "value": 63},
+		},
+	})
+	req, _ := http.NewRequest("POST", "https://api.temporis.co/v1/data_sources/ingest", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("TEMPORIS_TOKEN"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close() // 204 No Content on success
+}</code></pre></div>
+            <div class="code-block-wrap" data-lang="PHP"><pre class="code-block"><code>&lt;?php
+$ch = curl_init("https://api.temporis.co/v1/data_sources/ingest");
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER =&gt; true,
+    CURLOPT_POST           =&gt; true,
+    CURLOPT_HTTPHEADER     =&gt; [
+        "Authorization: Bearer " . getenv("TEMPORIS_TOKEN"),
+        "Content-Type: application/json",
+    ],
+    CURLOPT_POSTFIELDS =&gt; json_encode([
+        "data_source" =&gt; "store_metrics",
+        "records" =&gt; [
+            ["timestamp" =&gt; 1718841600, "name" =&gt; "orders", "value" =&gt; 42],
+            ["timestamp" =&gt; 1718845200, "name" =&gt; "orders", "value" =&gt; 51],
+            ["timestamp" =&gt; 1718848800, "name" =&gt; "orders", "value" =&gt; 47],
+            ["timestamp" =&gt; 1718852400, "name" =&gt; "orders", "value" =&gt; 63],
+        ],
+    ]),
+]);
+curl_exec($ch);            // 204 No Content on success
+curl_close($ch);</code></pre></div>
+            <div class="code-block-wrap" data-lang="Ruby"><pre class="code-block"><code>require "net/http"
+require "json"
+
+uri = URI("https://api.temporis.co/v1/data_sources/ingest")
+req = Net::HTTP::Post.new(uri)
+req["Authorization"] = "Bearer #{ENV['TEMPORIS_TOKEN']}"
+req["Content-Type"] = "application/json"
+req.body = {
+  data_source: "store_metrics",
+  records: [
+    { timestamp: 1718841600, name: "orders", value: 42 },
+    { timestamp: 1718845200, name: "orders", value: 51 },
+    { timestamp: 1718848800, name: "orders", value: 47 },
+    { timestamp: 1718852400, name: "orders", value: 63 },
+  ],
+}.to_json
+
+Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+# =&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="Java"><pre class="code-block"><code>import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+var body = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+
+var request = HttpRequest.newBuilder(URI.create("https://api.temporis.co/v1/data_sources/ingest"))
+    .header("Authorization", "Bearer " + System.getenv("TEMPORIS_TOKEN"))
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(body))
+    .build();
+
+var response = HttpClient.newHttpClient()
+    .send(request, HttpResponse.BodyHandlers.ofString());  // 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="C#"><pre class="code-block"><code>using System.Net.Http.Headers;
+using System.Text;
+
+var token = Environment.GetEnvironmentVariable("TEMPORIS_TOKEN");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+var json = """
+    {
+      "data_source": "store_metrics",
+      "records": [
+        { "timestamp": 1718841600, "name": "orders", "value": 42 },
+        { "timestamp": 1718845200, "name": "orders", "value": 51 },
+        { "timestamp": 1718848800, "name": "orders", "value": 47 },
+        { "timestamp": 1718852400, "name": "orders", "value": 63 }
+      ]
+    }
+    """;
+var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+await client.PostAsync("https://api.temporis.co/v1/data_sources/ingest", content);  // 204 No Content</code></pre></div>
+          </div>
+
+          <h2>レスポンス</h2>
+          <p>成功時、このエンドポイントは空のボディとともに <strong>204 No Content</strong> を返します:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>204 No Content</code></pre></div>
+
+          <h2>アップサートの動作</h2>
+          <p>各レコードは <code>(timestamp, name)</code> のペアをキーとします。同じタイムスタンプと系列名を持つレコードを再送すると、保存済みの値が上書きされます。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">リトライとバックフィルは冪等です</div><p>書き込みはアップサートであるため、失敗したリクエストの再試行や、過去データの再送を安全に行えます。重複は蓄積されず、同じキーにまとまります。</p></div>
+          </div>
+
+          <h2>バッチ処理</h2>
+          <p>1 リクエストあたり 1 レコードを送るよりも、多数のレコードを 1 つのリクエストで送ることをお勧めします。バッチ処理により、ラウンドトリップとオーバーヘッドが大幅に削減されます。履歴を読み込む際は、1 ポイントずつストリーミングするのではなく、多数のレコードからなるチャンク単位で送信してください。</p>
+
+          <h2>エラー</h2>
+          <p>エラーは、HTTP ステータスと、<code>{ "detail": "..." }</code> という形式の JSON ボディを返します。</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>ステータス</th><th>detail メッセージ</th><th>意味</th></tr></thead>
+            <tbody>
+              <tr><td>401</td><td>Invalid access token. / Missing access token.</td><td>認証に失敗しました。トークンを確認してください。</td></tr>
+              <tr><td>404</td><td>Data source not found.</td><td>指定された名前のデータソースが存在しません。先にダッシュボードで作成してください。</td></tr>
+              <tr><td>409</td><td>Data source is archived.</td><td>データソースがアーカイブされており、書き込みを受け付けられません。アーカイブを解除するか、別のソースを使用してください。</td></tr>
+            </tbody>
+          </table></div>
+          <p>完全なリファレンスについては、<a href="../api/errors.html">エラーとステータスコード</a>を参照してください。</p>
+
+          <h2>関連項目</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">データソース →</p><p class="doc-card-desc">Temporis が名前付き系列をどのように保存するか。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">予測の作成 →</p><p class="doc-card-desc">取り込んだデータから予測します。</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">データの準備 →</p><p class="doc-card-desc">系列をうまく予測できるように整えます。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

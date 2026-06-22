@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trabalhando com amostras de previsão — Temporis Docs</title>
+  <meta name="description" content="Transforme as muitas trajetórias amostradas de /v1/predict em uma previsão pontual e uma faixa de confiança.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Guias</span><span class="sep">/</span><span>Trabalhando com amostras</span></nav>
+          <h1>Trabalhando com amostras de previsão</h1>
+          <p class="docs-lead"><code>/v1/predict</code> retorna muitas trajetórias amostradas. Este guia as transforma nas coisas de que você realmente precisa: uma previsão pontual e uma faixa de confiança.</p>
+
+          <h2>Por que muitas trajetórias</h2>
+          <p>O Temporis gera previsões por amostragem — ele lê seu histórico e traça uma continuação plausível, do jeito que um modelo de linguagem continua um texto. Cada traçado é <strong>um futuro possível</strong>, não o futuro. Peça <code>count</code> traçados e você obtém <code>count</code> trajetórias independentes em <code>predictions</code>.</p>
+          <p>O propósito de ter muitas é a <strong>dispersão</strong>. Onde as trajetórias concordam, o modelo está confiante; onde elas se abrem em leque, o futuro é genuinamente incerto. Essa dispersão é a sua estimativa de incerteza — é por isso que uma única amostra raramente é o que você quer.</p>
+          <p>Defina <code>count</code> alto o suficiente para resolver essa dispersão. Um punhado de traçados dá um quadro instável e não confiável; algo na faixa de <strong>20 a 100</strong> resolve bem a distribuição para a maioria das séries. Mais é mais suave, mas não é de graça.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Count custa tokens</div><p>A previsão é tarifada por token do modelo, e cada trajetória gera um horizonte completo de tokens. Dobrar <code>count</code> aproximadamente dobra o custo da chamada. Use amostras suficientes para ver a dispersão com clareza e então pare.</p></div>
+          </div>
+
+          <h2>Uma previsão pontual</h2>
+          <p>Para reduzir as amostras a um único número por timestamp futuro, <strong>agregue entre as trajetórias em cada passo de tempo</strong>. A <strong>mediana</strong> é um bom padrão — é robusta à eventual trajetória extrema; a média também funciona, se você preferir.</p>
+          <p>As linhas de <code>data</code> de cada previsão compartilham os mesmos timestamps na mesma ordem, então você pode alinhá-las por índice. Aqui solicitamos 50 amostras do perfil <code>hourly_orders</code> e calculamos uma previsão mediana de <code>orders</code> por timestamp:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>Faixas de confiança</h2>
+          <p>A mediana lhe dá uma linha central; uma faixa lhe dá o intervalo em torno dela. Calcule <strong>quantis por timestamp</strong> entre as amostras — os percentis 10, 50 e 90 são uma escolha comum. O resultado são três linhas: uma borda inferior (p10), o centro (p50) e uma borda superior (p90).</p>
+          <p>Leia a faixa como "cerca de 80% dos futuros amostrados caem entre p10 e p90 neste timestamp." Uma faixa estreita significa que o modelo está confiante; uma faixa que se alarga conforme você olha mais adiante é o modelo dizendo honestamente que o futuro distante é menos certo do que o próximo.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>Escolhendo count, temperature, top_p na prática</h2>
+          <p>Três botões moldam as amostras, e eles fazem trabalhos diferentes:</p>
+          <ul>
+            <li><code>count</code> controla a <strong>resolução</strong> — quão finamente a dispersão é amostrada. Ele não muda a forma da distribuição, apenas o quão claramente você a vê.</li>
+            <li><code>temperature</code> (maior que 0) controla a <strong>dispersão</strong> — valores mais altos traçam futuros mais diversos e de maior amplitude; valores mais baixos agrupam as amostras perto do caminho mais provável do modelo. Cerca de <code>1.0</code> é neutro.</li>
+            <li><code>top_p</code> (0 a 1) <strong>apara as caudas</strong> — diminuí-lo corta os extremos improváveis, então você obtém menos saltos surpreendentes; <code>1.0</code> mantém a distribuição completa.</li>
+          </ul>
+          <p>Pontos de partida sensatos, dependendo de quão instável é a sua série:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>Caráter da série</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>Estável, suave (demanda constante)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>Típica</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>Volátil, com picos (preços, tráfego em rajadas)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>Trate esses valores como um ponto de partida. Trace uma faixa, observe se ela está apertada demais para ser honesta ou tão ampla que é inútil, e ajuste o <code>temperature</code> primeiro.</p>
+
+          <h2>Classificando por loss</h2>
+          <p>Às vezes você quer um único caminho representativo em vez de uma faixa — para uma demonstração, uma verificação de sanidade ou um rápido "como é um futuro típico". Cada trajetória carrega um <code>loss</code>, e <strong>um loss menor significa que o modelo considerou aquele caminho mais típico</strong>. Ordene por ele e pegue o início da lista:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Para uma previsão de verdade, prefira a mediana e uma faixa a qualquer trajetória única — o caminho de menor loss é um futuro plausível, não uma média deles. A classificação é mais útil para escolher um exemplo limpo ou filtrar valores atípicos.</p></div>
+          </div>
+
+          <h2>Relacionado</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Previsões →</p><p class="doc-card-desc">Como a amostragem transforma o histórico em uma previsão probabilística.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">API Predict →</p><p class="doc-card-desc">A referência completa de requisição e resposta.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ajustando um perfil de dados →</p><p class="doc-card-desc">Acerte a previsão subjacente antes de amostrá-la.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

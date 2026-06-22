@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forecasting कैसे काम करती है — Temporis Docs</title>
+  <meta name="description" content="Temporis आपकी time series को एक sequence के रूप में पढ़कर और उसे जारी रखकर forecast करता है, जैसे एक language model text को जारी रखता है। यहाँ मानसिक मॉडल बनाएँ।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Forecasting कैसे काम करती है</span></nav>
+          <h1>Forecasting कैसे काम करती है</h1>
+          <p class="docs-lead">Temporis आपकी time series को एक sequence की तरह मानकर forecast करता है जिसे एक बड़ा model पढ़ता और जारी रखता है — जैसे एक language model text को जारी रखता है। यह पेज API को छूने से पहले वह मानसिक मॉडल बनाता है।</p>
+
+          <h2>Forecasting sequence prediction है</h2>
+          <p>एक language model text का एक हिस्सा पढ़ता है और भविष्यवाणी करता है कि आगे क्या आता है। Temporis संख्याओं के साथ यही काम करता है। यह आपकी series की हाल की history पढ़ता है और उसे एक-एक कदम करके जारी रखता है।</p>
+          <p>model पहले ही time series की एक विशाल विविधता देख चुका है — ऐसी demand जो weekends पर बढ़ जाती है, ऐसी prices जो drift करती हैं, ऐसा energy load जो रोज़ चक्र में चलता है। इन सबसे उसने सीखा कि पहले जो आया उसे देखते हुए आगे क्या आने की प्रवृत्ति होती है। तो forecasting एक एकल, सामान्य प्रश्न बन जाती है: इस history को देखते हुए, एक संभावित continuation क्या है?</p>
+          <p>यह classical forecasting की तुलना में काम करने का एक अलग तरीका है। आम तौर पर आप एक model family चुनते, फिर एक समय में एक series के लिए उसके parameters fit करते — trend और seasonal terms चुनते, उन्हें tune करते, और जब भी data बदलता तब refit करते। Temporis प्रति-series model-building को छोड़ देता है। आप उसे history सौंपते हैं और वह कई series में सीखे गए patterns का सहारा लेकर sequence को सीधे जारी रखता है।</p>
+
+          <h2>संख्याओं से tokens तक</h2>
+          <p>इससे पहले कि model आपकी series पढ़ सके, raw values को discrete tokens के एक sequence में बदला जाता है — और model के output को वापस संख्याओं में बदला जाता है। यह pipeline चरणों में चलती है:</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">Resample</div><div class="kv-val">series को साफ़ करें और उसे एक नियमित time grid पर snap करें, ताकि points के बीच का अंतराल एक समान हो।</div></div>
+            <div class="kv-row"><div class="kv-key">Normalize</div><div class="kv-val">values को आपके data के typical spread (मोटे तौर पर इसकी 1st-से-99th percentile band) से सीखी गई एक common range में rescale करें, ताकि अलग-अलग series model को तुलनीय दिखें।</div></div>
+            <div class="kv-row"><div class="kv-key">Patch &amp; compress</div><div class="kv-val">grid को patches में बाँटें और हर patch को एक frequency transform से compress करें। एक patch वह इकाई है जिसे model एक बार में पढ़ता और लिखता है।</div></div>
+            <div class="kv-row"><div class="kv-key">Quantize</div><div class="kv-val">compressed patches को discrete tokens की एक vocabulary में map करें — वह वर्णमाला जिसे model वास्तव में देखता है।</div></div>
+            <div class="kv-row"><div class="kv-key">Continue</div><div class="kv-val">model token sequence पढ़ता है और एक continuation generate करता है, ठीक वैसे ही जैसे एक language model text को जारी रखता है।</div></div>
+            <div class="kv-row"><div class="kv-key">Decode</div><div class="kv-val">generate किए गए tokens को वापस संख्याओं में बदलें, normalization को पलटते हुए ताकि forecast आपके data के असली scale पर उतरे।</div></div>
+          </div>
+          <p>यहाँ patches मुख्य विचार हैं: वे model की पढ़ने और लिखने की इकाई तय करते हैं। model एक बार में एक raw observation नहीं चलता — यह एक बार में एक patch चलता है, यही कारण है कि forecast अकेले points के बजाय कदमों में आगे बढ़ता है।</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">आप इस encoding को नियंत्रित करते हैं</div><p>एक <a href="../concepts/data-profiles.html">data profile</a> की settings — इसका <code>interval</code>, <code>patch_len</code>, और <code>patch_spacing</code> — यह निर्धारित करती हैं कि आपका raw data ऊपर दिए गए patches में कैसे resample और chunk किया जाता है। profile को tune करना ही वह तरीका है जिससे आप अपनी series के लिए encoding को समायोजित करते हैं।</p></div>
+          </div>
+
+          <h2>एक distribution क्यों, एक अकेली संख्या नहीं</h2>
+          <p>Generation sampling है। हर बार जब model sequence को जारी रखता है, तो यह एक तय उत्तर पर प्रतिबद्ध होने के बजाय tokens draw करता है, इसलिए एक ही history पर दो runs दो अलग-अलग भविष्य उत्पन्न कर सकते हैं। यह एक feature है, noise नहीं।</p>
+          <p>एक अकेली prediction request एक साथ कई continuations माँगती है। <code>count</code> parameter तय करता है कि कितनी स्वतंत्र trajectories draw करनी हैं; हर एक भविष्य में एक पूर्ण, स्व-संगत path है। मिलकर ये एक probabilistic forecast बनाती हैं: एक अकेली रेखा के बजाय संभावित परिणामों का एक बादल।</p>
+          <p>दो controls यह आकार देते हैं कि वे draws कैसे sample किए जाते हैं। <code>temperature</code> तय करता है कि हर कदम कितना साहसिक है — अधिक samples को फैला देता है, कम उन्हें model के सबसे-संभावित path के पास गुच्छित रखता है। <code>top_p</code> sampling से पहले असंभावित tail को छाँट देता है। हर लौटाई गई trajectory एक <code>loss</code> भी रखती है, जो रैंक करता है कि model ने उसे कितना typical पाया, ताकि आप एक प्रतिनिधि path चुन सकें या सेट को weight दे सकें।</p>
+          <p>वास्तविक-दुनिया का मूल्य spread है। एक अकेले अनुमान के बजाय जो लगभग निश्चित रूप से थोड़ा ग़लत है, आप उन भविष्यों की range देखते हैं जिन्हें model संभावित मानता है — best case, worst case, और अनिश्चितता वास्तव में कितनी व्यापक है, पढ़ने के लिए पर्याप्त।</p>
+          <p>response कैसे पढ़ें इसके लिए <a href="../concepts/predictions.html">Predictions &amp; sampling</a> देखें, और trajectories के एक सेट को intervals में बदलने के लिए <a href="../guides/prediction-samples.html">Working with prediction samples</a> देखें।</p>
+
+          <h2>Data profiles कहाँ फिट होती हैं</h2>
+          <p>एक data profile वह सहेजी गई रेसिपी है जो आपके raw data को ऊपर दिए गए encoding से बाँधती है। यह एक data source की ओर इंगित करती है, पढ़ने के लिए series को नाम देती है, और उन knobs को तय करती है जो resampling और patching चलाती हैं — ताकि उस profile के विरुद्ध हर prediction आपका data एक ही तरह से पढ़े।</p>
+          <p>मुख्य knobs हैं <code>interval</code> (seconds में resampling bucket), <code>patch_len</code> और <code>patch_spacing</code> (हर patch का आकार और stride), <code>num_patches</code> (context के रूप में कितनी history पढ़नी है), और गुणात्मक रूप से बढ़ने वाली series के लिए <code>use_diffs</code> जैसे transforms। प्रत्येक को चुनने के मार्गदर्शन सहित पूरी सूची, <a href="../concepts/data-profiles.html">Data profiles</a> में रहती है।</p>
+
+          <h2>अगले कदम</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">वह रेसिपी जो raw data को encoding से बाँधती है — और हर knob जिसे आप tune कर सकते हैं।</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Predictions &amp; sampling →</p><p class="doc-card-desc">response पढ़ें और इसे count, temperature, और top_p के साथ आकार दें।</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">क्विकस्टार्ट →</p><p class="doc-card-desc">data ingest करें और अपना पहला forecast शुरू से अंत तक चलाएँ।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पेज पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

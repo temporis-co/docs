@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Источники данных — Temporis Docs</title>
+  <meta name="description" content="Источник данных — это место, где хранятся ваши исходные наблюдения. Изучите модель данных Temporis и узнайте, как передавать данные в неё потоком.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Документация</a><span class="sep">/</span><span>Концепции</span><span class="sep">/</span><span>Источники данных</span></nav>
+          <h1>Источники данных</h1>
+          <p class="docs-lead">Источник данных — это место, где хранятся ваши исходные наблюдения. Эта страница охватывает модель данных Temporis и то, как правильно отправлять данные в неё.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Вы создаёте источник данных один раз в панели управления, а затем передаёте в него наблюдения потоком через API по мере их появления.</p></div>
+          </div>
+
+          <h2>Модель данных</h2>
+          <p>Temporis хранит данные в виде строк. Каждое наблюдение — это одна тройка: <em>когда</em> что-то было измерено, <em>что</em> было измерено и <em>число</em>, которое вы измерили.</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">Время Unix в <strong>секундах</strong> (целое число). Момент, когда было сделано наблюдение.</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">Ряд, которому принадлежит это значение — например, <code>orders</code> или <code>revenue</code>.</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">Число. Числа с плавающей точкой допустимы.</div></div>
+          </div>
+
+          <p>Один источник данных может содержать множество именованных рядов бок о бок. Поле <code>name</code> — это то, что их различает. Ваши данные изолированы от данных любого другого клиента — источник данных принадлежит только вам.</p>
+
+          <h2>Создание источника данных</h2>
+          <p>Вы создаёте источник данных в панели управления в разделе <strong>Data Sources</strong>. Дайте ему имя — и он готов принимать данные.</p>
+
+          <p>Имена подчиняются нескольким правилам:</p>
+          <ul>
+            <li>Начинаются со строчной буквы.</li>
+            <li>Используют только строчные буквы, цифры и подчёркивания.</li>
+            <li>До 48 символов.</li>
+          </ul>
+
+          <p>Так, <code>store_metrics</code> и <code>grid_load_eu</code> допустимы; <code>Store-Metrics</code> и <code>2024data</code> — нет. Только что созданный источник данных пуст, пока вы не отправите в него наблюдения.</p>
+
+          <h2>Отправка наблюдений</h2>
+          <p>Вы добавляете данные через эндпоинт приёма данных. Каждый вызов несёт целевой <code>data_source</code> и список <code>records</code>. Здесь мы отправляем несколько показаний <code>orders</code> в <code>store_metrics</code>.</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>Успешный приём данных возвращает <strong>HTTP 204 No Content</strong> с пустым телом — читать обратно нечего, строки просто сохраняются. См. <a href="../api/ingest.html">справочник по приёму данных</a> для полного описания запроса и сведений об ошибках.</p>
+
+          <h2>Множество рядов в одном источнике</h2>
+          <p>Вы не ограничены одним рядом на источник. Отправляйте разные значения <code>name</code> в один и тот же <code>data_source</code>, и они сосуществуют как отдельные ряды. Магазин может отслеживать заказы, выручку и посетителей — всё в <code>store_metrics</code>.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>Держать связанные ряды вместе удобно, и это позволяет позже прогнозировать их совместно. <a href="data-profiles.html">Профиль данных</a> — это то место, где вы выбираете, какие из этих имён действительно читать.</p>
+
+          <h2>Обновления и дозагрузки</h2>
+          <p>Ключ upsert — это пара <code>(timestamp, name)</code>. Отправка записи, у которой timestamp и name уже существуют, <strong>перезаписывает</strong> сохранённое значение, а не добавляет дубликат.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Дозагрузки и повторы безопасны</div><p>Поскольку записи идемпотентны по <code>(timestamp, name)</code>, вы можете повторно отправить пакет после сбоя сети, исправить ошибочное показание или загрузить месяцы истории в любом порядке — результат всегда даёт одно и то же итоговое значение на корзину.</p></div>
+          </div>
+
+          <h2>Архивирование</h2>
+          <p>Когда источник больше не собирает новые данные, вы можете заархивировать его в панели управления. Архивирование прекращает дальнейший приём данных: запрос, нацеленный на заархивированный источник, возвращает <strong>HTTP 409</strong> <code>"Data source is archived."</code></p>
+
+          <p>Архивирование не разрушительно. Существующие данные остаются на месте, и любые профили данных, построенные на источнике, продолжают работать с уже сохранёнными данными.</p>
+
+          <h2>Дальнейшие шаги</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Профили данных →</p><p class="doc-card-desc">Превратите исходные ряды источника в нечто, что можно прогнозировать.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">API приёма данных →</p><p class="doc-card-desc">Полный справочник по эндпоинту приёма данных и его ответам.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">Подготовка данных →</p><p class="doc-card-desc">Практические советы по получению чистых, готовых к прогнозированию рядов.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">На этой странице</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

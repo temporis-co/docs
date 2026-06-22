@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Подготовка данных — Документация Temporis</title>
+  <meta name="description" content="Как загрузить историю временных рядов в Temporis в чистом, согласованном виде, который модель хорошо читает.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Документация</a><span class="sep">/</span><span>Руководства</span><span class="sep">/</span><span>Подготовка данных</span></nav>
+          <h1>Подготовка данных</h1>
+          <p class="docs-lead">Хорошие прогнозы начинаются с чистых и согласованных входных данных. В этом руководстве описано, как загрузить историю в Temporis в виде, который модель хорошо читает.</p>
+
+          <h2>Используйте Unix-секунды единообразно</h2>
+          <p>Каждая отправляемая вами временная метка — это целочисленное количество <strong>Unix-секунд</strong>, то есть число секунд, прошедших с 1970-01-01 00:00:00 UTC. Не миллисекунды и не строка с датой в формате ISO. Если ваша исходная система выдаёт миллисекунды, разделите их на 1000 перед отправкой.</p>
+          <p>Выберите единую дисциплину работы с часовыми поясами и никогда от неё не отклоняйтесь. Простейшее правило, которое всегда работает: <strong>храните всё в UTC</strong>. Unix-секунды по своей сути выражены в UTC, поэтому, пока вы преобразуете каждую локальную метку в её истинный момент в UTC перед отправкой, ваш ряд остаётся внутренне согласованным. Смешивание значений в локальном времени и в UTC в одном ряду незаметно сдвигает точки и портит суточный паттерн, который изучает модель.</p>
+          <p>Ваши временные метки не обязаны приходиться на круглые числа. Параметр <code>interval</code> профиля данных привязывает наблюдения к регулярной сетке — для профиля <code>hourly_orders</code> каждая точка распределяется в ближайший час. Вы предоставляете реальный момент, когда произошло каждое наблюдение, а выравниванием занимается профиль.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Быстрое преобразование</div><p>В Python выражение <code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> даёт Unix-секунды для явно заданного момента в UTC. Всегда указывайте часовой пояс, чтобы преобразование было однозначным.</p></div>
+          </div>
+
+          <h2>Отправляйте историю пакетами</h2>
+          <p>Редко бывает, что нужно отправить лишь одно наблюдение — у вас их за месяцы или годы. Эндпоинт загрузки принимает много записей за один запрос, поэтому разбивайте заполнение истории на пакеты по несколько тысяч записей и отправляйте их в цикле, а не по одной записи за раз.</p>
+          <p>Загрузка <strong>идемпотентна</strong>. Ключ для upsert — это <code>(timestamp, name)</code>, поэтому повторная отправка уже отправленной записи просто перезаписывает её тем же значением — это пустая операция. Это значит, что заполнение истории безопасно повторять: если пакет не прошёл на середине или ваш скрипт упал, просто запустите его снова. Дубликатов не возникнет.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>Успешная загрузка возвращает <strong>HTTP 204 No Content</strong> с пустым телом, так что разбирать нечего — достаточно убедиться в статусе. Полное описание формата запроса см. в <a href="../api/ingest.html">справочнике по загрузке данных</a>.</p>
+
+          <h2>Дайте модели достаточно истории</h2>
+          <p>Профиль не может выдавать прогнозы, пока он не <strong>готов</strong>: Temporis нужно достаточно истории, чтобы вычислить статистику нормализации, через которую он читает ваш ряд. А каждому прогнозу требуется как минимум <code>min_patches</code> недавнего контекста, иначе запрос вернёт <strong>409 «Not enough data for this data profile.»</strong></p>
+          <p>Практическое правило: <strong>если сомневаетесь — отправляйте больше истории.</strong> Больше истории позволяет профилю стать готовым, с запасом перекрывает <code>min_patches</code> и даёт модели больше сезонных циклов для обучения. За отправку большего, чем использует контекстное окно, штрафа нет — точки старше, чем покрывает <code>num_patches</code>, просто не читаются при прогнозировании.</p>
+          <p>Чтобы понять, что означают <code>min_patches</code>, <code>num_patches</code> и «готовность» и как они связаны с вашим <code>interval</code>, прочитайте <a href="../concepts/data-profiles.html">Профили данных</a>.</p>
+
+          <h2>Нерегулярные метки и пропуски</h2>
+          <p>Реальные данные неаккуратны. Датчик пропускает измерение, задача запускается с опозданием на несколько минут, магазин закрыт в праздник. Чистить всё это вручную не нужно — за это отвечает шаг ресэмплинга в профиле.</p>
+          <p>Параметр <code>interval</code> распределяет ваши наблюдения по регулярной сетке, что поглощает <em>слегка нерегулярные</em> метки: измерение, пришедшее в 10:58, и измерение в 11:03 оба попадают в корзину 11:00. Для <em>отсутствующих</em> корзин <code>fill_limit</code> задаёт, сколько подряд идущих пустых корзин Temporis заполнит протягиванием вперёд, прежде чем сдаться. Короткий пропуск перекрывается; длинный пропуск остаётся дырой, и эти строки отбрасываются, а не выдумываются.</p>
+          <p>Если в вашем ряду есть <em>повторяющиеся</em> периоды простоя — часы, когда заведомо ничего не может произойти, — не считайте их пропущенными данными вовсе. Параметр <code>exclude_window</code> маскирует этот диапазон времени суток, чтобы он никогда не искажал ряд. Это настройка профиля, описанная в <a href="../concepts/data-profiles.html">Профилях данных</a>.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>Вы отправляете сырые наблюдения в том виде, в каком они у вас есть. Куда они попадут, как заполняются пропуски и какое время простоя игнорируется — это решения, которые принимает профиль, а не преобразования, которые вы запекаете в данные.</p></div>
+          </div>
+
+          <h2>Выравнивание нескольких рядов</h2>
+          <p>Профиль может читать несколько рядов сразу — многомерный профиль, прогнозирующий их совместно. Чтобы это хорошо работало, рядам нужна <strong>общая временная шкала</strong>: отправляйте наблюдения каждого ряда на одном и том же наборе временных меток, чтобы строки совпали после распределения по корзинам.</p>
+          <p>Несколько рядов можно отправить в одном запросе на загрузку — просто включите по записи для каждого ряда на каждую временную метку. Здесь два ряда, <code>orders</code> и <code>visitors</code>, разделяют одну временную шкалу:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>Если один ряд отсутствует на временной метке, где другой присутствует, эта корзина заполняется по <code>fill_limit</code>, как любой другой пропуск, — поэтому несколько отставших значений не нарушат выравнивание, но самый чистый совместный прогноз вы получите, когда ряды движутся по одним и тем же часам.</p>
+
+          <h2>Исправления и дозаполнения</h2>
+          <p>Нашли неверное значение? Пересчитываете квартал? Вам не нужно ничего удалять или особым образом исправлять — просто отправьте исправленную запись повторно. Поскольку ключ для upsert — это <code>(timestamp, name)</code>, отправка нового <code>value</code> на существующей паре timestamp+name <strong>перезаписывает</strong> старое.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Повторный запуск не имеет побочных эффектов</div><p>Поскольку каждая загрузка — это идемпотентный upsert, исправленное дозаполнение может безопасно перекрываться с уже отправленными данными. Переотправьте весь затронутый диапазон, если это проще, чем вычислять, какие именно точки изменились.</p></div>
+          </div>
+
+          <h2>Связанные материалы</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">Источники данных →</p><p class="doc-card-desc">Как организованы хранимые строки (timestamp, name, value).</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Профили данных →</p><p class="doc-card-desc">Рецепт чтения источника данных: интервал, патчи, пропуски.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Настройка профиля данных →</p><p class="doc-card-desc">Подберите каждую настройку под ритм ваших данных.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">На этой странице</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

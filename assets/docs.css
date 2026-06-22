@@ -702,6 +702,7 @@ html[data-theme="light"] .theme-toggle .theme-toggle-icon-light { display: block
 .docs-sidebar-foot {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin: 8px 6px 0;
   padding-top: 14px;
@@ -720,6 +721,61 @@ html[data-theme="light"] .theme-toggle .theme-toggle-icon-light { display: block
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .docs-sidebar-foot .dash-link:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-strong); }
+
+/* ---------- Language switcher ---------- */
+
+.lang-switcher { position: relative; flex-basis: 100%; }
+.lang-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-strong);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.lang-button:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-strong); }
+.lang-button svg { width: 15px; height: 15px; flex-shrink: 0; }
+.lang-button-text { flex: 1; text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lang-caret { transition: transform 0.15s; opacity: 0.7; }
+.lang-switcher.open .lang-caret { transform: rotate(180deg); }
+
+.lang-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: none;
+  flex-direction: column;
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  z-index: 60;
+}
+.lang-switcher.open .lang-menu { display: flex; }
+.lang-option {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.lang-option:hover { background: var(--surface-hover); color: var(--text); }
+.lang-option.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
 .menu-toggle {
   display: none;
@@ -768,6 +824,42 @@ html[data-theme="light"] .theme-toggle .theme-toggle-icon-light { display: block
     z-index: 45;
   }
   body.nav-open .nav-scrim { display: block; }
+}
+
+/* ---------- RTL (Arabic) ---------- */
+/* Grid auto-reverses column order under dir=rtl; fix borders, code, and the
+   off-canvas drawer so they sit on the correct side. Code stays LTR. */
+
+[dir="rtl"] .docs-sidebar { border-right: none; border-left: 1px solid var(--border); }
+
+[dir="rtl"] .docs-toc-inner { border-left: none; border-right: 1px solid var(--border); padding-left: 0; padding-right: 18px; }
+[dir="rtl"] .docs-toc a { border-left: none; border-right: 2px solid transparent; margin-left: 0; margin-right: -20px; padding-left: 0; padding-right: 18px; }
+[dir="rtl"] .docs-toc a.h3 { padding-right: 30px; }
+[dir="rtl"] .docs-toc a.active { border-left-color: transparent; border-right-color: var(--accent); }
+
+[dir="rtl"] .callout { border-left-width: 1px; border-right-width: 3px; }
+[dir="rtl"] .callout.tip { border-left-color: var(--border); border-right-color: var(--accent); }
+[dir="rtl"] .callout.note { border-left-color: var(--border); border-right-color: var(--text-muted); }
+[dir="rtl"] .callout.warning { border-left-color: var(--border); border-right-color: var(--warn); }
+[dir="rtl"] .callout.danger { border-left-color: var(--border); border-right-color: var(--danger); }
+
+[dir="rtl"] .steps { padding: 0; }
+[dir="rtl"] .steps > li { padding: 0 46px 8px 0; }
+[dir="rtl"] .steps > li::before { left: auto; right: 0; }
+
+[dir="rtl"] .heading-anchor { margin-left: 0; margin-right: 8px; }
+
+/* Code, endpoints, and inline tokens are always left-to-right. */
+[dir="rtl"] pre.code-block { direction: ltr; text-align: left; padding-right: 18px; padding-left: 52px; }
+[dir="rtl"] .code-copy-button { right: auto; left: 9px; }
+[dir="rtl"] .endpoint { direction: ltr; }
+[dir="rtl"] .param-head { direction: ltr; justify-content: flex-end; }
+[dir="rtl"] .param-desc { direction: rtl; }
+[dir="rtl"] .docs-article :not(pre) > code { direction: ltr; unicode-bidi: embed; }
+
+@media (max-width: 860px) {
+  [dir="rtl"] .docs-sidebar { left: auto; right: 0; transform: translateX(100%); }
+  [dir="rtl"] body.nav-open .docs-sidebar { transform: translateX(0); }
 }
 
 /* utility */

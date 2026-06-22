@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>错误与状态码 — Temporis 文档</title>
+  <meta name="description" content="Temporis 如何报告成功与失败、每个 HTTP 状态的含义，以及如何在代码中处理它们。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/errors" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>API 参考</span><span class="sep">/</span><span>错误与状态码</span></nav>
+          <h1>错误与状态码</h1>
+          <p class="docs-lead">Temporis 如何报告成功与失败、每个状态的含义，以及如何处理它们。</p>
+
+          <h2>响应形态</h2>
+          <p>响应的形态取决于发生了什么：</p>
+          <ul>
+            <li>成功的<a href="../api/ingest.html">摄取</a>返回 <strong>204 No Content</strong>，无主体。</li>
+            <li>成功的<a href="../api/predict.html">预测</a>返回 <strong>200</strong>，带有一个 JSON 主体。</li>
+            <li>任何错误都返回相应的 HTTP 状态码，并带有形如 <code>{ "detail": "..." }</code> 的 JSON 主体。</li>
+          </ul>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Data profile not found." }</code></pre></div>
+
+          <h2>状态码</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>状态</th><th>含义</th><th>出现位置</th></tr></thead>
+            <tbody>
+              <tr><td>200 OK</td><td>预测成功；主体中包含样本。</td><td>predict</td></tr>
+              <tr><td>204 No Content</td><td>摄取成功；无主体。</td><td>ingest</td></tr>
+              <tr><td>400 Bad Request</td><td>预测参数无效。</td><td>predict</td></tr>
+              <tr><td>401 Unauthorized</td><td>访问令牌缺失或无效。</td><td>所有请求</td></tr>
+              <tr><td>402 Payment Required</td><td>未绑定信用卡，或存在付款问题。</td><td>predict</td></tr>
+              <tr><td>404 Not Found</td><td>数据源未找到（ingest）；数据画像未找到或尚未就绪（predict）。</td><td>ingest、predict</td></tr>
+              <tr><td>409 Conflict</td><td>数据源已归档（ingest）；数据不足（predict）。</td><td>ingest、predict</td></tr>
+              <tr><td>502 Bad Gateway</td><td>预测失败——服务端的瞬时错误。</td><td>predict</td></tr>
+            </tbody>
+          </table></div>
+
+          <h2>处理错误</h2>
+          <p>大多数失败都对应一个明确的下一步操作：</p>
+          <ul>
+            <li><strong>401</strong> — 检查 <code>Authorization</code> 头是否存在且令牌是否有效。参阅<a href="../api/authentication.html">身份验证</a>。</li>
+            <li><strong>402</strong> — 在仪表板的 Billing 中添加或修正信用卡，然后重试。</li>
+            <li><strong>404</strong> — 确认数据源或数据画像存在，并且画像已就绪可用。</li>
+            <li><strong>predict 上的 409</strong> — 摄取更多历史数据，直到画像满足其最低要求，然后重试。</li>
+            <li><strong>ingest 上的 409</strong> — 数据源已归档；请取消归档，或写入另一个数据源。</li>
+            <li><strong>502</strong> — 瞬时错误。请使用指数退避策略重试。</li>
+          </ul>
+
+          <p>对状态码做一个简单的分支判断即可覆盖以上所有情况：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import time, requests
+
+def predict(payload, token, retries=3):
+    for attempt in range(retries):
+        resp = requests.post(
+            "https://api.temporis.co/v1/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 502:
+            time.sleep(2 ** attempt)   # transient: back off and retry
+            continue
+        detail = resp.json().get("detail", "")
+        if resp.status_code == 402:
+            raise RuntimeError(f"Billing: {detail} — add a card in the dashboard.")
+        if resp.status_code == 409:
+            raise RuntimeError(f"Not ready: {detail} — ingest more history.")
+        resp.raise_for_status()        # 400 / 401 / 404: fix the request
+    raise RuntimeError("Prediction failed after retries.")</code></pre></div>
+
+          <h2>重试</h2>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">重试该重试的内容</div><p>502 可以安全重试——它是瞬时的。摄取是幂等的（写入会在 <code>(timestamp, name)</code> 键上执行 upsert），因此重试失败的摄取始终是安全的。请勿盲目重试 4xx 响应；应先修正请求。</p></div>
+          </div>
+
+          <h2>相关内容</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">创建预测 →</p><p class="doc-card-desc">predict 端点的请求与响应。</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">摄取记录 →</p><p class="doc-card-desc">将观测值写入数据源。</p></a>
+            <a class="doc-card" href="../api/authentication.html"><p class="doc-card-title">身份验证 →</p><p class="doc-card-desc">创建并发送 bearer 令牌。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

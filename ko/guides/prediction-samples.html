@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>예측 샘플 다루기 — Temporis Docs</title>
+  <meta name="description" content="/v1/predict가 반환하는 수많은 샘플링된 궤적을 점 예측과 신뢰 구간으로 바꾸세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>가이드</span><span class="sep">/</span><span>샘플 다루기</span></nav>
+          <h1>예측 샘플 다루기</h1>
+          <p class="docs-lead"><code>/v1/predict</code>는 수많은 샘플링된 궤적을 반환합니다. 이 가이드는 그것들을 실제로 필요한 것 — 점 예측과 신뢰 구간 — 으로 바꿉니다.</p>
+
+          <h2>왜 여러 궤적인가</h2>
+          <p>Temporis는 샘플링으로 예측을 생성합니다 — 이력을 읽고 그럴듯한 연속을 그려내는데, 마치 언어 모델이 텍스트를 이어가는 방식과 같습니다. 각 추출(draw)은 미래 그 자체가 아니라 <strong>가능한 하나의 미래</strong>입니다. <code>count</code>개의 추출을 요청하면 <code>predictions</code> 안에 <code>count</code>개의 독립적인 궤적을 받습니다.</p>
+          <p>여러 개를 갖는 핵심은 <strong>퍼짐(spread)</strong>입니다. 궤적들이 일치하는 곳에서는 모델이 확신하고, 부채꼴로 벌어지는 곳에서는 미래가 진정으로 불확실합니다. 그 퍼짐이 곧 불확실성 추정치이며 — 그래서 단일 샘플은 원하는 결과가 되기 어렵습니다.</p>
+          <p>그 퍼짐을 분해해 낼 만큼 <code>count</code>를 충분히 높게 설정하세요. 몇 개 안 되는 추출은 들쭉날쭉하고 신뢰할 수 없는 그림을 주며, 대부분의 시계열에서는 <strong>20에서 100</strong> 사이 정도면 분포를 잘 분해해 냅니다. 더 많으면 부드러워지지만 공짜는 아닙니다.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">count는 토큰을 소모합니다</div><p>예측은 모델 토큰 단위로 과금되며, 모든 궤적은 전체 예측 구간만큼의 토큰을 생성합니다. <code>count</code>를 두 배로 늘리면 호출 비용도 대략 두 배가 됩니다. 퍼짐이 분명히 보일 만큼만 샘플을 사용하고 거기서 멈추세요.</p></div>
+          </div>
+
+          <h2>점 예측</h2>
+          <p>샘플들을 미래 타임스탬프마다 하나의 숫자로 압축하려면 <strong>각 타임스텝에서 궤적들을 가로질러 집계</strong>하세요. <strong>중앙값(median)</strong>이 좋은 기본값입니다 — 가끔 나오는 극단적인 궤적에 강건하기 때문입니다. 원한다면 평균(mean)도 사용할 수 있습니다.</p>
+          <p>각 예측의 <code>data</code> 행은 같은 타임스탬프를 같은 순서로 공유하므로, 인덱스로 정렬할 수 있습니다. 다음은 <code>hourly_orders</code> 프로파일에서 샘플 50개를 요청하고 타임스탬프별 중앙값 <code>orders</code> 예측을 계산하는 예입니다:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>신뢰 구간</h2>
+          <p>중앙값은 중심선을 주고, 구간(band)은 그 주변의 범위를 줍니다. 샘플들을 가로질러 <strong>타임스탬프별 분위수</strong>를 계산하세요 — 10번째, 50번째, 90번째 백분위수가 흔한 선택입니다. 결과는 세 개의 선입니다: 하단 가장자리(p10), 중심(p50), 상단 가장자리(p90).</p>
+          <p>이 구간은 "이 타임스탬프에서 샘플링된 미래의 약 80%가 p10과 p90 사이에 들어온다"로 읽으세요. 좁은 구간은 모델이 확신한다는 뜻이고, 더 멀리 내다볼수록 넓어지는 구간은 먼 미래가 가까운 미래보다 덜 확실하다고 모델이 정직하게 알려주는 것입니다.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>실전에서 count, temperature, top_p 고르기</h2>
+          <p>세 가지 손잡이가 샘플을 빚어내며, 각각 다른 일을 합니다:</p>
+          <ul>
+            <li><code>count</code>는 <strong>해상도</strong>를 제어합니다 — 퍼짐이 얼마나 세밀하게 샘플링되는지를 정합니다. 분포의 모양을 바꾸지는 않고, 그것을 얼마나 또렷이 보는지만 바꿉니다.</li>
+            <li><code>temperature</code>(0보다 큼)는 <strong>퍼짐</strong>을 제어합니다 — 값이 높을수록 더 다양하고 폭넓은 미래를 그려내고, 낮을수록 모델이 가장 가능성 높다고 보는 경로 근처로 샘플을 모읍니다. <code>1.0</code> 정도가 중립적입니다.</li>
+            <li><code>top_p</code>(0에서 1)는 <strong>꼬리를 잘라냅니다</strong> — 낮추면 가능성 낮은 극단을 잘라내 놀라운 점프가 줄어들고, <code>1.0</code>은 분포 전체를 유지합니다.</li>
+          </ul>
+          <p>시계열이 얼마나 들쭉날쭉한지에 따른 합리적인 출발점은 다음과 같습니다:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>시계열 성격</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>안정적이고 매끄러움(꾸준한 수요)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>일반적</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>변동이 크고 뾰족함(가격, 폭발적 트래픽)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>이 값들은 출발점으로 삼으세요. 구간을 그려 보고, 정직하다고 보기엔 너무 빡빡한지 아니면 쓸모없을 만큼 너무 넓은지 살펴본 뒤 <code>temperature</code>부터 조정하세요.</p>
+
+          <h2>loss로 순위 매기기</h2>
+          <p>때로는 구간이 아니라 대표 경로 하나가 필요할 때가 있습니다 — 데모, 점검, 또는 "전형적인 미래는 어떤 모습일까"를 빠르게 보고 싶을 때요. 모든 궤적은 <code>loss</code>를 지니며, <strong>loss가 낮을수록 모델이 그 경로를 더 전형적으로 보았다는 뜻</strong>입니다. 이를 기준으로 정렬하고 목록의 앞쪽을 취하세요:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>실제 예측을 위해서는 단일 궤적보다 중앙값과 구간을 선호하세요 — loss가 가장 낮은 경로는 가능한 하나의 미래이지 그것들의 평균이 아닙니다. 순위 매기기는 깔끔한 예시를 고르거나 이상치를 걸러낼 때 가장 유용합니다.</p></div>
+          </div>
+
+          <h2>관련 문서</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">예측 →</p><p class="doc-card-desc">샘플링이 어떻게 이력을 확률적 예측으로 바꾸는지.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict API →</p><p class="doc-card-desc">전체 요청 및 응답 레퍼런스.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">데이터 프로파일 튜닝하기 →</p><p class="doc-card-desc">샘플링하기 전에 기반이 되는 예측부터 제대로 맞추세요.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

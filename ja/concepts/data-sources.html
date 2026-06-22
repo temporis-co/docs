@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>データソース — Temporis Docs</title>
+  <meta name="description" content="データソースは、生の観測値が格納される場所です。Temporis のデータモデルと、そこへデータをストリーミングする方法を学びましょう。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>コンセプト</span><span class="sep">/</span><span>データソース</span></nav>
+          <h1>データソース</h1>
+          <p class="docs-lead">データソースは、生の観測値が格納される場所です。このページでは、Temporis のデータモデルと、そこへ適切にデータを送る方法を説明します。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>データソースはダッシュボードで一度だけ作成し、その後は観測値が発生するたびに API 経由でストリーミングしていきます。</p></div>
+          </div>
+
+          <h2>データモデル</h2>
+          <p>Temporis はデータを行として保存します。すべての観測値は、ひとつの三つ組です。すなわち、何かが測定された<em>とき</em>、<em>何が</em>測定されたか、そして測定した<em>数値</em>です。</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val"><strong>秒</strong>単位の Unix 時刻（整数）。観測が取得された瞬間です。</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">この値が属する系列です。たとえば <code>orders</code> や <code>revenue</code> などです。</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">数値です。浮動小数点数でも問題ありません。</div></div>
+          </div>
+
+          <p>1 つのデータソースは、名前付きの系列を多数並べて保持できます。それらを区別するのが <code>name</code> フィールドです。あなたのデータは他のすべての顧客のデータから隔離されています。データソースはあなただけのものです。</p>
+
+          <h2>データソースの作成</h2>
+          <p>データソースはダッシュボードの<strong>データソース</strong>セクションで作成します。名前を付ければ、データを受け取る準備が整います。</p>
+
+          <p>名前にはいくつかのルールがあります。</p>
+          <ul>
+            <li>小文字で始めること。</li>
+            <li>小文字、数字、アンダースコアのみを使うこと。</li>
+            <li>最大 48 文字まで。</li>
+          </ul>
+
+          <p>したがって <code>store_metrics</code> や <code>grid_load_eu</code> は有効ですが、<code>Store-Metrics</code> や <code>2024data</code> は無効です。作成したばかりのデータソースは、観測値を送るまで空のままです。</p>
+
+          <h2>観測値の送信</h2>
+          <p>データの追加には ingest エンドポイントを使います。各呼び出しには、対象の <code>data_source</code> と <code>records</code> のリストを含めます。ここでは、いくつかの <code>orders</code> の値を <code>store_metrics</code> に投入します。</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>取り込みに成功すると、空のボディを伴う <strong>HTTP 204 No Content</strong> が返されます。読み戻すものは何もなく、行が単に保存されるだけです。完全なリクエストとエラーの詳細については<a href="../api/ingest.html">ingest リファレンス</a>を参照してください。</p>
+
+          <h2>1 つのソースに複数の系列</h2>
+          <p>1 つのソースにつき 1 つの系列という制限はありません。異なる <code>name</code> の値を同じ <code>data_source</code> に送れば、それらは別々の系列として共存します。ある店舗では、orders、revenue、visitors をすべて <code>store_metrics</code> で追跡することもできるでしょう。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>関連する系列をまとめておくと便利であり、後でそれらを同時に予測できるようにもなります。これらの名前のうち、実際にどれを読み取るかを選ぶのが<a href="data-profiles.html">データプロファイル</a>です。</p>
+
+          <h2>更新とバックフィル</h2>
+          <p>アップサートのキーは <code>(timestamp, name)</code> のペアです。timestamp と name がすでに存在するレコードを送ると、重複を追加するのではなく、保存されている値が<strong>上書き</strong>されます。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">バックフィルとリトライは安全です</div><p>書き込みは <code>(timestamp, name)</code> に対して冪等なので、ネットワークの不調の後にバッチを再送したり、誤った値を修正したり、数か月分の履歴を任意の順序で読み込んだりできます。結果は常に、バケットごとに同じ最終値になります。</p></div>
+          </div>
+
+          <h2>アーカイブ</h2>
+          <p>ソースが新しいデータを収集しなくなったら、ダッシュボードでアーカイブできます。アーカイブすると以降の取り込みが停止します。アーカイブ済みのソースを対象とするリクエストは <strong>HTTP 409</strong> <code>"Data source is archived."</code> を返します。</p>
+
+          <p>アーカイブは非破壊的です。既存のデータはそのまま残り、そのソースの上に構築されたデータプロファイルは、すでに保存されているデータに対して動作し続けます。</p>
+
+          <h2>次のステップ</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">データプロファイル →</p><p class="doc-card-desc">ソースの生の系列を、予測できるものへと変える。</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingest API →</p><p class="doc-card-desc">ingest エンドポイントとそのレスポンスの完全なリファレンス。</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">データの準備 →</p><p class="doc-card-desc">クリーンで予測に適した系列を取り込むための実践的なアドバイス。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>予測とサンプリング — Temporis Docs</title>
+  <meta name="description" content="予測リクエストは複数のありうる未来を返します。レスポンスの読み方と、count、temperature、top_p がそれをどう形作るかを学びましょう。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>コンセプト</span><span class="sep">/</span><span>予測とサンプリング</span></nav>
+          <h1>予測とサンプリング</h1>
+          <p class="docs-lead">予測リクエストは、ひとつではなく複数のありうる未来を返します。このページでは、レスポンスの読み方と、サンプリングのコントロールがそれをどう形作るかを説明します。正確なスキーマについては<a href="../api/predict.html">predict リファレンス</a>を参照してください。</p>
+
+          <h2>リクエストの構造</h2>
+          <p>予測の対象となるのは、生のデータソースではなくデータプロファイルです。プロファイルはどの系列を読み取り、どうエンコードするかをすでに知っているので、リクエストはどのプロファイルを使い、どうサンプリングするかだけを伝えればよいのです。4 つのフィールドでそれをカバーします。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">必須</span></div>
+              <p class="param-desc">あなたのプロファイルのいずれかの名前、たとえば <code>hourly_orders</code>、または公開プロファイル。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">必須</span></div>
+              <p class="param-desc">引き出す独立した未来の軌跡の数。最低 1 つ。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">必須</span></div>
+              <p class="param-desc">サンプルの散らばり具合。0 より大きくなければならず、約 1.0 が中立。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">必須</span></div>
+              <p class="param-desc">0 から 1 の範囲の核サンプリングのカットオフ。低くするほど可能性の低い裾を切り落とす。</p>
+            </div>
+          </div>
+          <p>以下は、<code>hourly_orders</code> プロファイルに対して 20 本の軌跡を要求するリクエストです。</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>完全なリファレンス、すなわちすべてのフィールド、ステータスコード、エラーメッセージは<a href="../api/predict.html">predict エンドポイントリファレンス</a>にあります。</p>
+
+          <h2>レスポンスの読み方</h2>
+          <p>呼び出しに成功すると、4 つのトップレベルフィールドを伴う HTTP 200 が返されます。</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">このリクエストの 16 進数の識別子。サポートやご自身のログのために保管してください。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">要求したプロファイルをそのまま返します。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">予測がそこから続く、最後に<em>観測された</em>タイムスタンプの Unix 秒。すべての軌跡はこの時点の直後から始まります。</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">サンプリングされた軌跡 1 本につき 1 エントリ（長さは <code>count</code> に等しい）。それぞれが <code>loss</code> と、予測行の <code>data</code> 配列を持ちます。</p>
+            </div>
+          </div>
+          <p>以下の例は、<code>orders</code> の予測から得られた 2 本の軌跡を示しています。プロファイルの <code>interval</code> は 3600、<code>patch_spacing</code> は 2 なので、行は <code>interval &times; patch_spacing</code> = 7200 秒（2 時間）ごとにステップします。</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>各行は <code>timestamp</code> に加えて、プロファイルが読み取る系列ごとに 1 つのフィールドを持ちます。ここでは <code>orders</code> だけです。タイムスタンプは <code>interval &times; patch_spacing</code> 秒ごとにステップし、その間隔はすべての軌跡で同じなので、サンプルを行ごとに揃えられます。</p>
+
+          <h2>サンプリングのコントロール</h2>
+          <p>3 つのパラメータが、返ってくる未来の集合を形作ります。これらは、解像度と多様性を、コストと安定性とのあいだでトレードオフします。</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>パラメータ</th><th>働き</th><th>典型的な値</th><th>上げ下げするのはどんなとき</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>引き出す独立した軌跡の数。サンプルが多いほど分布をよく解像する。</td><td>20 から 100</td><td>より滑らかな区間が欲しいときは上げ、トークンコストを抑えたいときは下げる。</td></tr>
+              <tr><td><code>temperature</code></td><td>サンプルの散らばり具合。高いほど多様で不確実、低いほど最も可能性の高い経路の近くに集まる。</td><td>約 1.0</td><td>予測が狭すぎるときは上げ、非現実的に散らばるときは下げる。</td></tr>
+              <tr><td><code>top_p</code></td><td>核サンプリングのカットオフ。サンプリング前に可能性の低い裾を切り落とす。</td><td>0.9 から 1.0</td><td>意外な飛躍を抑えたいときは下げ、分布全体を保ちたいときは 1.0 に近づける。</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">コストは count に比例します</div><p>各サンプルは独立して生成され、モデル使用のトークンごとに課金されるので、<code>count</code> が 100 のリクエストは <code>count</code> が 20 のおよそ 5 倍のコストがかかります。必要な解像度とコストのバランスをとって <code>count</code> を選んでください。</p></div>
+          </div>
+
+          <h2>Loss: 軌跡のランク付け</h2>
+          <p>すべての予測には <code>loss</code> が付随します。値が低いほど、モデルがその軌跡をより典型的、すなわち履歴を踏まえて予期したものにより合致していると考えたことを意味します。loss が高い経路も依然として有効なサンプルであり、ただ中心からより外れているだけです。</p>
+          <p><code>loss</code> を使えば、代表となる単一の軌跡を選んだり、集合を要約するときの重みとして使ったりできます。最も典型的な経路を取り出すには次のようにします。</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>多変量の予測</h2>
+          <p>プロファイルが複数の系列名を読み取る場合、各予測行は名前ごとに 1 つのフィールドを持ちます。系列は同時に予測されるので、行内で値の整合性が保たれます。<code>kw</code> と <code>price</code> をまとめて読み取るプロファイルは、次のような行を返します。</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>公開データプロファイル</h2>
+          <p>ご自身でのセットアップなしに、Temporis が維持する共有プロファイルに対して予測できます。公開名を <code>data_profile</code> として渡すだけです。</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>レスポンスの形は同一で、各行の系列フィールドは、その公開プロファイルが読み取るものに一致します。</p>
+
+          <h2>関連項目</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">予測サンプルの扱い方 →</p><p class="doc-card-desc">軌跡の集合を、区間、中央値、意思決定へと変える。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict リファレンス →</p><p class="doc-card-desc">リクエストとレスポンスの完全なスキーマと、すべてのステータスコード。</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">データプロファイル →</p><p class="doc-card-desc">各予測が何を読み取るかを決めるレシピを設定する。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

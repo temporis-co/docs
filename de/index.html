@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporis Docs — Forecasting als API</title>
+  <meta name="description" content="Temporis ist eine API für die Prognose von Zeitreihen. Senden Sie Ihre Daten, definieren Sie ein Datenprofil und erzeugen Sie probabilistische Prognosen mit einer einzigen Anfrage.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="index" data-base="">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <div class="docs-hero">
+            <span class="eyebrow">Temporis Dokumentation</span>
+            <h1>Forecasting, als API.</h1>
+            <p class="docs-lead">
+              Temporis verwandelt Ihre Zeitreihen in probabilistische Prognosen. Streamen Sie Ihre
+              Zahlen hinein, beschreiben Sie mit einem <strong>Datenprofil</strong>, wie sie gelesen
+              werden sollen, und rufen Sie einen einzigen Endpunkt auf, um Prognosen für das zu erzeugen,
+              was als Nächstes kommt — keine Modelle zu trainieren, keine Infrastruktur zu betreiben.
+            </p>
+          </div>
+
+          <div class="card-grid">
+            <a class="doc-card" href="quickstart.html">
+              <p class="doc-card-kicker">Hier starten</p>
+              <p class="doc-card-title">Schnellstart →</p>
+              <p class="doc-card-desc">Vom API-Schlüssel zur ersten Prognose in etwa fünf Minuten.</p>
+            </a>
+            <a class="doc-card" href="concepts/how-it-works.html">
+              <p class="doc-card-kicker">Verstehen</p>
+              <p class="doc-card-title">Wie Forecasting funktioniert →</p>
+              <p class="doc-card-desc">Die Idee hinter Temporis: eine Zeitreihe wie eine Sprache zu behandeln, die ein Modell lesen kann.</p>
+            </a>
+            <a class="doc-card" href="api/predict.html">
+              <p class="doc-card-kicker">Referenz</p>
+              <p class="doc-card-title">API-Referenz →</p>
+              <p class="doc-card-desc">Exakte Anfrage- und Antwortformate für jeden Endpunkt.</p>
+            </a>
+          </div>
+
+          <h2>Der Aufbau eines Temporis-Workflows</h2>
+          <p>
+            Alles in Temporis dreht sich um drei Begriffe. Sobald diese verinnerlicht sind, ergibt sich
+            die gesamte API ganz von selbst.
+          </p>
+
+          <div class="kv">
+            <div class="kv-row">
+              <div class="kv-key">Datenquelle</div>
+              <div class="kv-val">Ein benannter Stream, in den Sie Rohbeobachtungen schreiben — wie eine Tabelle aus <code>(timestamp, name, value)</code>-Zeilen. Eine Datenquelle kann viele Reihen enthalten.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">Datenprofil</div>
+              <div class="kv-val">Ein gespeichertes Rezept, das Temporis sagt, <em>wie</em> eine Datenquelle zu lesen ist: welche Reihen, in welchem Intervall, wie viel Historie und wie sie zu bereinigen ist. Dagegen prognostizieren Sie.</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">Prognose</div>
+              <div class="kv-val">Ein Aufruf von <code>/v1/predict</code> mit einem Datenprofil liefert mehrere mögliche Zukünfte zurück, jede davon eine vollständige Wertetrajektorie in die Zukunft.</div>
+            </div>
+          </div>
+
+          <p>
+            Datenquellen und Datenprofile verwalten Sie im
+            <a href="https://platform.temporis.co">Temporis-Dashboard</a>, und die
+            ressourcenintensive Arbeit — das Senden von Daten und das Anfordern von Prognosen — erledigen Sie über die
+            hier dokumentierte API.
+          </p>
+
+          <h2>Ein erster Eindruck</h2>
+          <p>Beobachtungen zu senden und eine Prognose anzufordern, sieht so aus:</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code># 1. Send observations to a data source
+curl -X POST "https://api.temporis.co/v1/data_sources/ingest" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1716249600, "name": "orders", "value": 42 },
+      { "timestamp": 1716253200, "name": "orders", "value": 51 }
+    ]
+  }'
+
+# 2. Ask a data profile for the next steps
+curl -X POST "https://api.temporis.co/v1/predict" \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  --json '{
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+BASE = "https://api.temporis.co"
+headers = {"Authorization": f"Bearer {os.environ['TEMPORIS_TOKEN']}"}
+
+# 1. Send observations to a data source
+requests.post(f"{BASE}/v1/data_sources/ingest", headers=headers, json={
+    "data_source": "store_metrics",
+    "records": [
+        {"timestamp": 1716249600, "name": "orders", "value": 42},
+        {"timestamp": 1716253200, "name": "orders", "value": 51},
+    ],
+}).raise_for_status()
+
+# 2. Ask a data profile for the next steps
+forecast = requests.post(f"{BASE}/v1/predict", headers=headers, json={
+    "data_profile": "hourly_orders",
+    "count": 5,
+    "temperature": 1.0,
+    "top_p": 0.9,
+}).json()
+
+print(forecast["predictions"][0]["data"])</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const BASE = "https://api.temporis.co";
+const headers = {
+  "Authorization": `Bearer ${process.env.TEMPORIS_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
+// 1. Send observations to a data source
+await fetch(`${BASE}/v1/data_sources/ingest`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1716249600, name: "orders", value: 42 },
+      { timestamp: 1716253200, name: "orders", value: 51 },
+    ],
+  }),
+});
+
+// 2. Ask a data profile for the next steps
+const res = await fetch(`${BASE}/v1/predict`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 5,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const forecast = await res.json();
+console.log(forecast.predictions[0].data);</code></pre></div>
+          </div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body">
+              <div class="callout-title">Neu bei der Zeitreihenprognose?</div>
+              <p>Beginnen Sie mit <a href="concepts/how-it-works.html">Wie Forecasting funktioniert</a>. Dort wird das mentale Modell hinter Temporis erklärt, bevor Sie die API berühren — und der Rest der Dokumentation liest sich dadurch leichter.</p>
+            </div>
+          </div>
+
+          <h2>Wie es weitergeht</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="concepts/data-sources.html">
+              <p class="doc-card-title">Datenquellen</p>
+              <p class="doc-card-desc">Wie Temporis Beobachtungen speichert und wie Sie sie effektiv senden.</p>
+            </a>
+            <a class="doc-card" href="concepts/data-profiles.html">
+              <p class="doc-card-title">Datenprofile</p>
+              <p class="doc-card-desc">Jede Einstellung, die festlegt, wie Ihre Daten gelesen und prognostiziert werden.</p>
+            </a>
+            <a class="doc-card" href="concepts/predictions.html">
+              <p class="doc-card-title">Prognosen &amp; Sampling</p>
+              <p class="doc-card-desc">Prognosen lesen, und was <code>count</code>, <code>temperature</code> und <code>top_p</code> bewirken.</p>
+            </a>
+            <a class="doc-card" href="guides/prediction-samples.html">
+              <p class="doc-card-title">Arbeiten mit Samples</p>
+              <p class="doc-card-desc">Aus vielen Sample-Trajektorien Intervalle und Punktprognosen ableiten.</p>
+            </a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

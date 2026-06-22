@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Erros e códigos de status — Temporis Docs</title>
+  <meta name="description" content="Como a Temporis reporta sucesso e falha, o que cada status HTTP significa e como tratá-los no seu código.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/errors" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Referência da API</span><span class="sep">/</span><span>Erros e códigos de status</span></nav>
+          <h1>Erros e códigos de status</h1>
+          <p class="docs-lead">Como a Temporis reporta sucesso e falha, o que cada status significa e como tratá-los.</p>
+
+          <h2>Formato da resposta</h2>
+          <p>O formato de uma resposta depende do que aconteceu:</p>
+          <ul>
+            <li>Uma <a href="../api/ingest.html">ingestão</a> bem-sucedida retorna <strong>204 No Content</strong> sem corpo.</li>
+            <li>Uma <a href="../api/predict.html">previsão</a> bem-sucedida retorna <strong>200</strong> com um corpo JSON.</li>
+            <li>Qualquer erro retorna o status HTTP relevante com um corpo JSON no formato <code>{ "detail": "..." }</code>.</li>
+          </ul>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Data profile not found." }</code></pre></div>
+
+          <h2>Códigos de status</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Status</th><th>Significado</th><th>Onde</th></tr></thead>
+            <tbody>
+              <tr><td>200 OK</td><td>Previsão bem-sucedida; o corpo contém as amostras.</td><td>predict</td></tr>
+              <tr><td>204 No Content</td><td>Ingestão bem-sucedida; sem corpo.</td><td>ingest</td></tr>
+              <tr><td>400 Bad Request</td><td>Parâmetros de previsão inválidos.</td><td>predict</td></tr>
+              <tr><td>401 Unauthorized</td><td>Token de acesso ausente ou inválido.</td><td>todas as requisições</td></tr>
+              <tr><td>402 Payment Required</td><td>Nenhum cartão cadastrado, ou um problema de pagamento.</td><td>predict</td></tr>
+              <tr><td>404 Not Found</td><td>Fonte de dados não encontrada (ingest); perfil de dados não encontrado ou não pronto para servir (predict).</td><td>ingest, predict</td></tr>
+              <tr><td>409 Conflict</td><td>Fonte de dados arquivada (ingest); dados insuficientes (predict).</td><td>ingest, predict</td></tr>
+              <tr><td>502 Bad Gateway</td><td>A previsão falhou — um erro transitório no servidor.</td><td>predict</td></tr>
+            </tbody>
+          </table></div>
+
+          <h2>Tratando erros</h2>
+          <p>A maioria das falhas corresponde a uma ação seguinte clara:</p>
+          <ul>
+            <li><strong>401</strong> — verifique se o cabeçalho <code>Authorization</code> está presente e se o token é válido. Consulte <a href="../api/authentication.html">Autenticação</a>.</li>
+            <li><strong>402</strong> — adicione ou corrija um cartão de crédito no painel, em Billing, e tente novamente.</li>
+            <li><strong>404</strong> — certifique-se de que a fonte de dados ou o perfil de dados existe, e de que o perfil está pronto para servir.</li>
+            <li><strong>409 em predict</strong> — ingira mais histórico até o perfil atingir seu mínimo, então tente novamente.</li>
+            <li><strong>409 em ingest</strong> — a fonte de dados está arquivada; desarquive-a ou escreva em outra fonte.</li>
+            <li><strong>502</strong> — transitório. Tente novamente com backoff exponencial.</li>
+          </ul>
+
+          <p>Uma simples ramificação no código de status cobre todos esses casos:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import time, requests
+
+def predict(payload, token, retries=3):
+    for attempt in range(retries):
+        resp = requests.post(
+            "https://api.temporis.co/v1/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 502:
+            time.sleep(2 ** attempt)   # transient: back off and retry
+            continue
+        detail = resp.json().get("detail", "")
+        if resp.status_code == 402:
+            raise RuntimeError(f"Billing: {detail} — add a card in the dashboard.")
+        if resp.status_code == 409:
+            raise RuntimeError(f"Not ready: {detail} — ingest more history.")
+        resp.raise_for_status()        # 400 / 401 / 404: fix the request
+    raise RuntimeError("Prediction failed after retries.")</code></pre></div>
+
+          <h2>Retentativas</h2>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Repita as coisas certas</div><p>Um 502 é seguro de repetir — ele é transitório. A ingestão é idempotente (as escritas fazem upsert pela chave <code>(timestamp, name)</code>), então repetir uma ingestão que falhou é sempre seguro. Evite repetir cegamente respostas 4xx; corrija a requisição primeiro.</p></div>
+          </div>
+
+          <h2>Relacionados</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Criar uma previsão →</p><p class="doc-card-desc">Requisição e resposta do endpoint de previsão.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">Ingerir registros →</p><p class="doc-card-desc">Escreva observações em uma fonte de dados.</p></a>
+            <a class="doc-card" href="../api/authentication.html"><p class="doc-card-title">Autenticação →</p><p class="doc-card-desc">Crie e envie tokens bearer.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

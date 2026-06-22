@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>데이터 프로파일 튜닝하기 — Temporis Docs</title>
+  <meta name="description" content="데이터의 리듬에 맞는 interval, 패치, 이력, 결측 설정을 골라 예측 품질을 눈에 띄게 높이세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/tuning-profile" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>가이드</span><span class="sep">/</span><span>데이터 프로파일 튜닝하기</span></nav>
+          <h1>데이터 프로파일 튜닝하기</h1>
+          <p class="docs-lead">기본값으로도 동작하지만, 프로파일을 데이터의 리듬에 맞추면 예측이 눈에 띄게 좋아집니다. 각 설정을 고르는 방법은 다음과 같습니다. (설정은 <a href="../concepts/data-profiles.html">데이터 프로파일</a>에 정의되어 있습니다.)</p>
+
+          <h2>interval을 데이터 주기에 맞추기</h2>
+          <p>가장 중요한 단 하나의 설정은 <code>interval</code>입니다 — 관측값이 리샘플링되는 버킷의 크기를 초 단위로 나타냅니다. 데이터의 <strong>실제 샘플링 주기</strong>로 설정하세요. 주문을 한 시간에 한 번 기록한다면 <code>3600</code>을 사용하고, 하루에 한 수치를 기록한다면 <code>86400</code>을 사용하세요.</p>
+          <p>어느 방향으로든 이를 잘못 설정하면 모델이 어려움을 겪습니다:</p>
+          <ul>
+            <li><strong>너무 촘촘하면</strong> — 실제 주기보다 짧은 interval은 채워 넣은 버킷으로 시계열을 부풀려, 컨텍스트 윈도를 신호 대신 잡음과 빈 공간에 소모하게 됩니다.</li>
+            <li><strong>너무 성기면</strong> — 주기보다 긴 interval은 실제 구조를 평균으로 뭉개 버립니다. 시간 단위 수요 패턴을 하루로 버킷팅하면 그냥 사라져 버립니다.</li>
+          </ul>
+          <p><code>hourly_orders</code> 프로파일은 <code>store_metrics</code>가 시간당 하나의 주문 수치를 기록하므로 <code>interval: 3600</code>을 사용합니다. 데이터가 실제로 도착하는 주기에 맞추는 것부터 시작하세요.</p>
+
+          <h2>이력의 양: num_patches와 min_patches</h2>
+          <p>이 두 설정은 예측에 관여하는 이력의 <em>최댓값</em>과 <em>최솟값</em>을 제어합니다.</p>
+          <p><code>num_patches</code>는 컨텍스트 윈도입니다: 모델이 읽는 최근 이력 패치의 최대 개수입니다. 패치가 많을수록 더 많은 과거 주기가 시야에 들어오므로, 모델이 포착할 수 있는 계절성도 늘어납니다 — 주간 또는 연간 구조를 "보게" 하고 싶을 때 높이세요. 다만 이득은 점점 줄어듭니다. 어느 지점을 넘으면 현재를 더 이상 반영하지 못하는 오래된 이력을 더 많은 토큰을 들여 넣는 것일 뿐, 예측은 나아지지 않습니다.</p>
+          <p><code>min_patches</code>는 하한선입니다: 프로파일이 예측을 제공하기 전에 요구하는 최소 이력입니다. 이보다 적으면 predict 호출은 <strong>409 "Not enough data for this data profile."</strong>를 반환합니다. 몇 개 안 되는 포인트로 만든 예측을 반환하느니 신뢰도 낮은 예측을 <em>거부</em>하고 싶을 때 <code>min_patches</code>를 높이세요 — 이른 추측이 오해를 부를 수 있는 신생 시계열에 유용합니다.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>범위로 생각하세요: <code>min_patches</code>는 "이보다 적으면 아예 시도하지 마라"이고, <code>num_patches</code>는 "이보다 더 과거는 돌아보지 마라"입니다.</p></div>
+          </div>
+
+          <h2>해상도 대 예측 거리: patch_len과 patch_spacing</h2>
+          <p>패치는 모델이 한 번에 읽고 쓰는 포인트 묶음입니다. <code>patch_len</code>은 그 묶음에 포인트가 몇 개 들어가는지를 설정합니다. <code>patch_spacing</code>은 실제로 사용하는 포인트 사이의 보폭(stride)을 설정합니다 — 시계열을 다운샘플링하고, 그 과정에서 생성되는 각 스텝이 얼마나 멀리 내다보는지를 늘립니다.</p>
+          <p>핵심 관계: 예측 포인트 사이의 <strong>실효 시간 스텝</strong>은 <code>interval * patch_spacing</code>초입니다. <code>interval: 3600</code>과 <code>patch_spacing: 1</code>이면 각 스텝은 한 시간입니다. <code>patch_spacing</code>을 <code>3</code>으로 올리면 각 스텝이 세 시간을 포괄합니다 — 같은 개수의 생성 포인트로 이제 세 배 더 먼 미래까지, 더 거친 해상도로 도달합니다.</p>
+          <p>따라서 이는 <strong>세밀함과 도달 거리</strong> 사이의 절충입니다. 세밀한 단기 예측이 필요하면 spacing을 좁게 유지하고, 더 긴 예측 거리가 중요하고 거친 스텝을 받아들일 수 있다면 넓히세요.</p>
+
+          <h2>수준 대 성장: use_diffs</h2>
+          <p><code>use_diffs</code>(로그 차분 변환)는 원시 수준 대신 <em>상대적 변화</em> — 포인트 간 로그 성장 — 위에서 작업하도록 모델에 지시합니다.</p>
+          <ul>
+            <li>곱셈적으로 성장하거나 복리로 불어나는 시계열에는 <strong>켜세요</strong>: 매출, 가격, 사용자 수 등 추세가 있거나 "더해지기"보다 "배가되는" 모든 것입니다. 성장을 모델링하면 상승하는 시계열이 과거 수준에 묶이는 것을 막아줍니다.</li>
+            <li>고정된 범위 안에서 맴도는 유계(bounded) 또는 정상(stationary) 수준에는 <strong>끄세요</strong>: 가동률 퍼센트, 온도, 포화율 등입니다. 이들은 돌아갈 자연스러운 수준이 있으며, 차분하면 잡음만 더해집니다.</li>
+          </ul>
+          <p>간단한 판별법: 시계열의 단위를 두 배로 늘렸을 때 일반적인 변동 폭도 두 배가 되어야 한다면 곱셈적인 것입니다 — <code>use_diffs</code>를 켜세요.</p>
+
+          <h2>비가동 시간 마스킹: 제외 윈도</h2>
+          <p>어떤 시계열에는 설계상 아무 일도 일어나지 않는 반복 구간이 있습니다 — 밤새 닫혀 있는 시장, 영업시간 외의 매장처럼요. 이 비가동 시간을 그대로 두면, 모델은 그 평평하거나 0인 구간을 실제 신호로 취급해 존재하지도 않는 패턴을 학습합니다.</p>
+          <p><code>exclude_window</code>(타임존과 시작/종료 하루 중 시각)는 그 반복 범위를 마스킹하여 모델이 읽는 시계열에서 제외합니다. 시계열이 구조적으로 멈춰 있는 시간대에 하나 설정하세요 — 예를 들어 시장 가격을 읽는 프로파일에서 야간을 마스킹하면 — 그래야 개장 시간대의 동작이 깨끗하게 유지됩니다.</p>
+
+          <h2>결측 허용하기: fill_limit</h2>
+          <p><code>fill_limit</code>은 Temporis가 전방 채움할 연속 결측 버킷의 최대 길이입니다. 한계보다 짧은 결측은 마지막 값을 이어가며 메워지고, 한계보다 긴 결측은 구멍으로 남아 해당 행들이 버려집니다.</p>
+          <ul>
+            <li>더 긴 단절을 메우려면 <strong>높이세요</strong> — 가끔 한동안 오프라인이 되는 센서처럼, 마지막 측정값을 이어가는 것이 합리적인 경우입니다.</li>
+            <li>큰 구멍을 가로질러 데이터를 만들어 내고 싶지 않다면 <strong>낮추세요</strong> — 긴 결측이 진정으로 "알 수 없음"을 의미하고, 평평하게 이어진 선이 오해를 부를 경우입니다.</li>
+          </ul>
+
+          <h2>문제 해결</h2>
+          <div class="table-wrap"><table><thead><tr><th>증상</th><th>유력한 원인</th><th>시도해 볼 것</th></tr></thead><tbody>
+            <tr><td>409 "Not enough data"</td><td>포인트가 너무 적거나 <code>min_patches</code>가 너무 높게 설정됨</td><td>이력을 더 인제스트하거나 <code>min_patches</code>를 낮추세요</td></tr>
+            <tr><td>예측이 일일 패턴을 무시함</td><td><code>interval</code>이 너무 성기거나 컨텍스트가 너무 짧음</td><td><code>interval</code>을 주기에 맞추고 <code>num_patches</code>를 높이세요</td></tr>
+            <tr><td>추세가 있는 시계열에서 예측이 과도하게 치솟음</td><td>성장이 아닌 원시 수준을 모델링함</td><td><code>use_diffs</code>를 켜세요</td></tr>
+            <tr><td>닫혀 있는 게 알려진 구간에서 이상한 값이 나옴</td><td>비가동 시간이 시계열에 포함됨</td><td>해당 범위에 <code>exclude_window</code>를 설정하세요</td></tr>
+            <tr><td>행이 버려짐 / 시계열이 듬성듬성해 보임</td><td>결측이 <code>fill_limit</code>을 초과함</td><td><code>fill_limit</code>을 높이거나 보내는 데이터를 더 촘촘하게 하세요</td></tr>
+          </tbody></table></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>한 번에 하나의 설정만 바꾸고 예측을 비교하세요. 각 조정이 눈에 보이는 고립된 효과를 낼 때 튜닝을 추론하기가 더 쉽습니다.</p></div>
+          </div>
+
+          <h2>관련 문서</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로파일 →</p><p class="doc-card-desc">이 가이드에 나오는 모든 설정의 전체 정의.</p></a>
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">샘플 다루기 →</p><p class="doc-card-desc">샘플링된 궤적을 점 예측과 신뢰 구간으로 바꾸세요.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">예측 →</p><p class="doc-card-desc">샘플링이 어떻게 확률적 예측을 만들어 내는지.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

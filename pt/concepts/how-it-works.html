@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Como funciona a previsão — Temporis Docs</title>
+  <meta name="description" content="O Temporis faz previsões lendo sua série temporal como uma sequência e a continuando, da mesma forma que um modelo de linguagem continua um texto. Construa o modelo mental aqui.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Documentação</a><span class="sep">/</span><span>Conceitos</span><span class="sep">/</span><span>Como funciona a previsão</span></nav>
+          <h1>Como funciona a previsão</h1>
+          <p class="docs-lead">O Temporis faz previsões tratando sua série temporal como uma sequência que um grande modelo lê e continua — da mesma forma que um modelo de linguagem continua um texto. Esta página constrói esse modelo mental antes de você tocar na API.</p>
+
+          <h2>Previsão é predição de sequência</h2>
+          <p>Um modelo de linguagem lê um trecho de texto e prevê o que vem a seguir. O Temporis faz a mesma coisa com números. Ele lê o histórico recente da sua série e o continua, um passo de cada vez.</p>
+          <p>O modelo já viu uma variedade enorme de séries temporais — demanda que dispara nos fins de semana, preços que oscilam, carga de energia que segue ciclos diários. A partir de tudo isso, ele aprendeu o que tende a vir a seguir dado o que veio antes. Assim, a previsão se torna uma única pergunta geral: dado este histórico, qual é uma continuação plausível?</p>
+          <p>Esta é uma forma de trabalhar diferente da previsão clássica. Normalmente, você escolheria uma família de modelos e então ajustaria seus parâmetros uma série por vez — escolhendo termos de tendência e sazonalidade, calibrando-os e reajustando sempre que os dados mudassem. O Temporis dispensa a construção de modelo por série. Você lhe entrega o histórico e ele continua a sequência diretamente, apoiando-se em padrões aprendidos ao longo de muitas séries.</p>
+
+          <h2>De números a tokens</h2>
+          <p>Antes que o modelo possa ler sua série, os valores brutos são transformados em uma sequência de tokens discretos — e a saída do modelo é convertida de volta em números. O pipeline ocorre em etapas:</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">Reamostrar</div><div class="kv-val">Limpa a série e a encaixa em uma grade temporal regular, de modo que o espaçamento entre os pontos seja uniforme.</div></div>
+            <div class="kv-row"><div class="kv-key">Normalizar</div><div class="kv-val">Reescala os valores para uma faixa comum aprendida a partir da dispersão típica dos seus dados (aproximadamente a faixa entre o 1º e o 99º percentil), para que séries diferentes pareçam comparáveis ao modelo.</div></div>
+            <div class="kv-row"><div class="kv-key">Dividir em patches e comprimir</div><div class="kv-val">Divide a grade em patches e comprime cada patch com uma transformada de frequência. Um patch é a unidade que o modelo lê e escreve de cada vez.</div></div>
+            <div class="kv-row"><div class="kv-key">Quantizar</div><div class="kv-val">Mapeia os patches comprimidos para um vocabulário de tokens discretos — o alfabeto que o modelo de fato enxerga.</div></div>
+            <div class="kv-row"><div class="kv-key">Continuar</div><div class="kv-val">O modelo lê a sequência de tokens e gera uma continuação, assim como um modelo de linguagem continua um texto.</div></div>
+            <div class="kv-row"><div class="kv-key">Decodificar</div><div class="kv-val">Converte os tokens gerados de volta em números, desfazendo a normalização para que a previsão caia na escala real dos seus dados.</div></div>
+          </div>
+          <p>Os patches são a ideia central aqui: eles definem a unidade de leitura e escrita do modelo. O modelo não avança uma observação bruta de cada vez — ele avança um patch de cada vez, e é por isso que a previsão progride em passos, e não em pontos isolados.</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">Você controla essa codificação</div><p>As configurações de um <a href="../concepts/data-profiles.html">perfil de dados</a> — seu <code>interval</code>, <code>patch_len</code> e <code>patch_spacing</code> — determinam como seus dados brutos são reamostrados e divididos nos patches acima. Ajustar o perfil é a forma de adaptar a codificação à sua série.</p></div>
+          </div>
+
+          <h2>Por que uma distribuição, e não um único número</h2>
+          <p>A geração é amostragem. Cada vez que o modelo continua a sequência, ele sorteia tokens em vez de se comprometer com uma única resposta fixa, de modo que duas execuções sobre o mesmo histórico podem produzir dois futuros diferentes. Isso é um recurso, não ruído.</p>
+          <p>Uma única requisição de previsão pede várias continuações de uma vez. O parâmetro <code>count</code> define quantas trajetórias independentes sortear; cada uma é um caminho completo e autoconsistente rumo ao futuro. Juntas, elas formam uma previsão probabilística: uma nuvem de desfechos plausíveis em vez de uma única linha.</p>
+          <p>Dois controles moldam como esses sorteios são amostrados. O <code>temperature</code> define quão ousado é cada passo — valores mais altos espalham as amostras, valores mais baixos as mantêm agrupadas perto do caminho mais provável do modelo. O <code>top_p</code> corta a cauda improvável antes da amostragem. Cada trajetória retornada também carrega um <code>loss</code>, que classifica quão típica o modelo a considerou, de modo que você pode escolher um caminho representativo ou ponderar o conjunto.</p>
+          <p>O valor prático está na dispersão. Em vez de um único palpite que quase certamente está um pouco errado, você vê a faixa de futuros que o modelo considera plausíveis — o suficiente para ler o melhor caso, o pior caso e o quão ampla é de fato a incerteza.</p>
+          <p>Consulte <a href="../concepts/predictions.html">Previsões e amostragem</a> para saber como ler a resposta, e <a href="../guides/prediction-samples.html">Trabalhando com amostras de previsão</a> para transformar um conjunto de trajetórias em intervalos.</p>
+
+          <h2>Onde os perfis de dados se encaixam</h2>
+          <p>Um perfil de dados é a receita salva que liga seus dados brutos à codificação acima. Ele aponta para uma fonte de dados, nomeia as séries a serem lidas e fixa os ajustes que governam a reamostragem e a divisão em patches — de modo que toda previsão feita contra aquele perfil leia seus dados da mesma maneira.</p>
+          <p>Os ajustes principais são <code>interval</code> (o intervalo de reamostragem em segundos), <code>patch_len</code> e <code>patch_spacing</code> (o tamanho e o passo de cada patch), <code>num_patches</code> (quanto histórico ler como contexto) e transformações como <code>use_diffs</code> para séries que crescem de forma multiplicativa. A lista completa, com orientações sobre como escolher cada um, está em <a href="../concepts/data-profiles.html">Perfis de dados</a>.</p>
+
+          <h2>Próximos passos</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Perfis de dados →</p><p class="doc-card-desc">A receita que liga os dados brutos à codificação — e cada ajuste que você pode calibrar.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Previsões e amostragem →</p><p class="doc-card-desc">Leia a resposta e a molde com count, temperature e top_p.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">Início rápido →</p><p class="doc-card-desc">Ingira dados e execute sua primeira previsão de ponta a ponta.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Nesta página</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

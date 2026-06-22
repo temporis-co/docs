@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>データの準備 — Temporis ドキュメント</title>
+  <meta name="description" content="時系列の履歴データを、モデルが正しく読み取れるクリーンで一貫した形式で Temporis に取り込む方法を解説します。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/preparing-data" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">ドキュメント</a><span class="sep">/</span><span>ガイド</span><span class="sep">/</span><span>データの準備</span></nav>
+          <h1>データの準備</h1>
+          <p class="docs-lead">優れた予測は、クリーンで一貫した入力から始まります。このガイドでは、履歴データをモデルが正しく読み取れる形式で Temporis に取り込む方法を説明します。</p>
+
+          <h2>Unix 秒を一貫して使う</h2>
+          <p>送信するすべてのタイムスタンプは、<strong>Unix 秒</strong>（1970-01-01 00:00:00 UTC からの経過秒数）を表す整数です。ミリ秒でも ISO 形式の日付文字列でもありません。ソースシステムがミリ秒を返す場合は、送信前に 1000 で割ってください。</p>
+          <p>タイムゾーンの扱いは 1 つに統一し、決して逸脱しないでください。常に機能する最もシンプルなルールは、<strong>すべてを UTC で保存する</strong>ことです。Unix 秒は本質的に UTC なので、送信前に各ローカルタイムスタンプを正しい UTC の瞬間に変換しておけば、系列は内部的に一貫した状態を保てます。同じ系列の中でローカル時刻と UTC の値を混在させると、データ点が静かにずれてしまい、モデルが学習する日次パターンが壊れてしまいます。</p>
+          <p>タイムスタンプはきりのよい数値に揃える必要はありません。データプロファイルの <code>interval</code> が観測値を規則的なグリッドにスナップします。<code>hourly_orders</code> プロファイルの場合、各データ点は最も近い時刻にバケット化されます。あなたは各観測が実際に発生した瞬間を渡すだけで、整列はプロファイルが処理します。</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">手早い変換例</div><p>Python では、<code>int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())</code> によって明示的な UTC の瞬間に対する Unix 秒が得られます。変換が曖昧にならないよう、常にタイムゾーンを付与してください。</p></div>
+          </div>
+
+          <h2>履歴をバッチで送信する</h2>
+          <p>送信する観測値が 1 件だけということはほとんどなく、数か月から数年分のデータがあるはずです。取り込みエンドポイントはリクエストごとに多数のレコードを受け付けるため、バックフィルを数千レコードずつのバッチに分割し、1 レコードずつではなくループで投稿してください。</p>
+          <p>取り込みは<strong>冪等</strong>です。アップサートのキーは <code>(timestamp, name)</code> なので、すでに送信済みのレコードを再送しても、同じ値で上書きされるだけ（何も起こらない）です。つまりバックフィルは安全に再実行できます。バッチが途中で失敗したりスクリプトがクラッシュしたりしても、もう一度実行するだけで構いません。重複が生じることはありません。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+BASE = "https://api.temporis.co"
+
+# history is a list of (unix_seconds, value) pairs, oldest first
+def records_for(history):
+    return [{"timestamp": ts, "name": "orders", "value": v} for ts, v in history]
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+records = records_for(history)
+for batch in chunked(records, 2000):
+    resp = requests.post(
+        f"{BASE}/v1/data_sources/ingest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"data_source": "store_metrics", "records": batch},
+    )
+    resp.raise_for_status()  # 204 No Content on success
+print(f"ingested {len(records)} records")</code></pre></div>
+
+          <p>取り込みが成功すると、本文が空の <strong>HTTP 204 No Content</strong> が返されるため、解析するものは何もありません。ステータスを確認するだけで十分です。リクエストの完全な形式については<a href="../api/ingest.html">取り込みリファレンス</a>を参照してください。</p>
+
+          <h2>モデルに十分な履歴を与える</h2>
+          <p>プロファイルは<strong>準備完了（ready）</strong>になるまで予測を提供できません。Temporis は、系列を読み取る際に用いる正規化統計量を計算するために十分な履歴を必要とします。さらに、各予測には少なくとも <code>min_patches</code> 分の直近のコンテキストが必要で、これに満たない場合リクエストは <strong>409「Not enough data for this data profile.」</strong> を返します。</p>
+          <p>実用的なルールは、<strong>迷ったらより多くの履歴を送る</strong>ことです。履歴が多いほどプロファイルは準備完了になりやすく、<code>min_patches</code> を余裕をもって満たし、モデルが学習できる季節サイクルも増えます。コンテキストウィンドウが使う以上に多く送ってもペナルティはありません。<code>num_patches</code> を超える古いデータ点は、予測時に単に読み込まれないだけです。</p>
+          <p><code>min_patches</code>、<code>num_patches</code>、そして「準備完了」が何を意味し、<code>interval</code> とどう関係するかについては、<a href="../concepts/data-profiles.html">データプロファイル</a>をお読みください。</p>
+
+          <h2>不規則なタイムスタンプと欠損</h2>
+          <p>現実のデータは雑然としています。センサーが読み取りをスキップしたり、ジョブが数分遅れて実行されたり、店舗が祝日に休業したりします。これらを手作業でクリーニングする必要はありません。プロファイルのリサンプリング処理が対応します。</p>
+          <p><code>interval</code> は観測値を規則的なグリッドにバケット化し、<em>わずかに不規則な</em>タイムスタンプを吸収します。10:58 に届いた読み取りと 11:03 に届いた読み取りは、どちらも 11:00 のバケットに入ります。<em>欠損した</em>バケットについては、<code>fill_limit</code> が、Temporis が諦めるまでに前方補完する連続した空バケットの数を設定します。短い欠損は橋渡しされますが、長い欠損は穴として残され、それらの行は作り出されるのではなく削除されます。</p>
+          <p>系列に<em>繰り返し発生する</em>停止時間（何も起こり得ない時間帯）がある場合は、それを欠損データとして扱わないでください。<code>exclude_window</code> がその時間帯をマスクするので、系列が歪むことはありません。これはプロファイルの設定で、<a href="../concepts/data-profiles.html">データプロファイル</a>で扱っています。</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><p>生の観測値はそのまま送信してください。どこに配置されるか、欠損がどう補完されるか、どの停止時間が無視されるかは、プロファイルが行う判断であり、データに焼き込む変換ではありません。</p></div>
+          </div>
+
+          <h2>複数系列の整列</h2>
+          <p>プロファイルは複数の系列を同時に読み取ることができます。これらを共同で予測する多変量プロファイルです。これをうまく機能させるには、系列に<strong>共通のタイムライン</strong>が必要です。各系列の観測値を同じタイムスタンプの集合で送信し、バケット化後に行が揃うようにしてください。</p>
+          <p>複数の系列を 1 回の取り込みリクエストで送信できます。各タイムスタンプに各系列のレコードを 1 件ずつ含めるだけです。ここでは 2 つの系列 <code>orders</code> と <code>visitors</code> が同じタイムラインを共有しています。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders",   "value": 42 },
+    { "timestamp": 1718841600, "name": "visitors", "value": 530 },
+    { "timestamp": 1718845200, "name": "orders",   "value": 39 },
+    { "timestamp": 1718845200, "name": "visitors", "value": 504 },
+    { "timestamp": 1718848800, "name": "orders",   "value": 51 },
+    { "timestamp": 1718848800, "name": "visitors", "value": 612 }
+  ]
+}</code></pre></div>
+
+          <p>ある系列が、別の系列が存在するタイムスタンプで欠損している場合、そのバケットは他の欠損と同様に <code>fill_limit</code> に従って補完されます。したがって、わずかな取りこぼしであれば整列は崩れませんが、系列が同じ時計で動いているときに最もきれいな共同予測が得られます。</p>
+
+          <h2>修正とバックフィル</h2>
+          <p>誤った値を見つけましたか。四半期の数値を修正しますか。特別な削除やパッチ適用は必要ありません。修正したレコードを再送するだけです。アップサートのキーは <code>(timestamp, name)</code> なので、既存の timestamp+name に新しい <code>value</code> を送ると、古い値が<strong>上書き</strong>されます。</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718841600, "name": "orders", "value": 47 }
+  ]
+}</code></pre></div>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">再実行に副作用はありません</div><p>すべての取り込みは冪等なアップサートなので、修正用のバックフィルがすでに送信済みのデータと重なっても安全です。どのデータ点が変わったかを正確に計算するより簡単であれば、影響を受ける範囲全体を再投稿してください。</p></div>
+          </div>
+
+          <h2>関連項目</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-sources.html"><p class="doc-card-title">データソース →</p><p class="doc-card-desc">保存された (timestamp, name, value) の行がどう整理されるか。</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">データプロファイル →</p><p class="doc-card-desc">データソースを読み取るレシピ: interval、パッチ、欠損。</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">データプロファイルのチューニング →</p><p class="doc-card-desc">各設定をデータのリズムに合わせる。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">このページの内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

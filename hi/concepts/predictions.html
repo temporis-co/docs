@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Predictions और sampling — Temporis Docs</title>
+  <meta name="description" content="एक prediction request कई संभावित भविष्य लौटाता है। जानें कि response को कैसे पढ़ें और count, temperature, तथा top_p इसे कैसे आकार देते हैं।">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Concepts</span><span class="sep">/</span><span>Predictions और sampling</span></nav>
+          <h1>Predictions और sampling</h1>
+          <p class="docs-lead">एक prediction request एक के बजाय कई संभावित भविष्य लौटाता है। यह पृष्ठ बताता है कि response को कैसे पढ़ें और sampling controls इसे कैसे आकार देते हैं। सटीक schema के लिए <a href="../api/predict.html">predict reference</a> देखें।</p>
+
+          <h2>एक request की संरचना</h2>
+          <p>आप किसी data profile के विरुद्ध prediction करते हैं, raw data source के विरुद्ध नहीं। profile पहले से जानता है कि कौन-सी series पढ़नी हैं और उन्हें कैसे encode करना है, इसलिए एक request को केवल यह बताना होता है कि कौन-सा profile और कैसे sample करना है। चार fields इसे कवर कर देते हैं:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">आपके किसी profile का नाम, जैसे <code>hourly_orders</code> — या कोई public profile।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">कितनी स्वतंत्र भविष्य की trajectories निकालनी हैं। कम से कम 1।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">samples कितने फैले हुए हैं। 0 से अधिक होना चाहिए; लगभग 1.0 तटस्थ होता है।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">आवश्यक</span></div>
+              <p class="param-desc">0 से 1 की सीमा में nucleus-sampling cutoff। कम मान असंभावित tail को काट देता है।</p>
+            </div>
+          </div>
+          <p>यहाँ <code>hourly_orders</code> profile के विरुद्ध 20 trajectories के लिए एक request है:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>पूरा reference — हर field, status code, और error message — <a href="../api/predict.html">predict endpoint reference</a> में है।</p>
+
+          <h2>Response को पढ़ना</h2>
+          <p>एक सफल call HTTP 200 के साथ चार top-level fields लौटाता है:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">इस request के लिए एक hex identifier। इसे support और अपने स्वयं के logs के लिए संभालकर रखें।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">आपके द्वारा माँगे गए profile को प्रतिध्वनित करता है।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">अंतिम <em>observed</em> timestamp का Unix seconds, जहाँ से forecast जारी रहता है। हर trajectory इस बिंदु के ठीक बाद से शुरू होती है।</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">प्रत्येक sampled trajectory के लिए एक entry (लंबाई <code>count</code> के बराबर)। प्रत्येक में एक <code>loss</code> और forecast rows का एक <code>data</code> array होता है।</p>
+            </div>
+          </div>
+          <p>नीचे दिया गया उदाहरण किसी <code>orders</code> forecast से दो trajectories दिखाता है। profile का <code>interval</code> 3600 है और इसका <code>patch_spacing</code> 2 है, इसलिए rows <code>interval &times; patch_spacing</code> = 7200 seconds (दो घंटे) के अंतराल पर बढ़ती हैं:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>प्रत्येक row में एक <code>timestamp</code> होता है साथ ही profile द्वारा पढ़ी जाने वाली प्रत्येक series के लिए एक field — यहाँ केवल <code>orders</code>। timestamps <code>interval &times; patch_spacing</code> seconds के अंतराल पर बढ़ती हैं, हर trajectory के लिए समान spacing, ताकि आप samples को row दर row align कर सकें।</p>
+
+          <h2>sampling controls</h2>
+          <p>तीन parameters उन भविष्यों के समूह को आकार देते हैं जो आपको वापस मिलते हैं। ये resolution और diversity को cost तथा stability के विरुद्ध संतुलित करते हैं।</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Parameter</th><th>यह क्या करता है</th><th>सामान्य मान</th><th>इसे कब बढ़ाएँ / घटाएँ</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>निकाली गई स्वतंत्र trajectories की संख्या। अधिक samples distribution को बेहतर ढंग से resolve करते हैं।</td><td>20 से 100</td><td>अधिक smooth intervals के लिए बढ़ाएँ; token cost घटाने के लिए कम करें।</td></tr>
+              <tr><td><code>temperature</code></td><td>samples कितने फैले हुए हैं। अधिक मान अधिक विविध और अनिश्चित होता है; कम मान सबसे संभावित पथ के निकट गुच्छित करता है।</td><td>~1.0</td><td>जब forecasts बहुत संकीर्ण दिखें तब बढ़ाएँ; जब वे अवास्तविक रूप से बिखरें तब कम करें।</td></tr>
+              <tr><td><code>top_p</code></td><td>Nucleus cutoff। sampling से पहले असंभावित tail को काट देता है।</td><td>0.9 से 1.0</td><td>आश्चर्यजनक उछाल दबाने के लिए कम करें; पूरे distribution को बनाए रखने के लिए 1.0 की ओर बढ़ाएँ।</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">cost, count के साथ बढ़ता है</div><p>प्रत्येक sample स्वतंत्र रूप से उत्पन्न होता है और model उपयोग के प्रति token पर मीटर किया जाता है, इसलिए <code>count</code> 100 वाली request की लागत <code>count</code> 20 वाली request से लगभग पाँच गुना होती है। अपनी आवश्यक resolution को cost के विरुद्ध संतुलित करने के लिए <code>count</code> चुनें।</p></div>
+          </div>
+
+          <h2>Loss: trajectories को क्रमबद्ध करना</h2>
+          <p>प्रत्येक prediction में एक <code>loss</code> होता है। कम मान का अर्थ है कि model ने उस trajectory को अधिक सामान्य माना — history को देखते हुए जो उसने अपेक्षित किया था उसके अधिक अनुरूप। अधिक-loss वाले पथ अब भी वैध samples हैं; वे बस कम केंद्रीय होते हैं।</p>
+          <p>किसी एकल प्रतिनिधि trajectory को चुनने के लिए <code>loss</code> का उपयोग करें, या जब आप समूह का सारांश बनाते हैं तब एक weight के रूप में। सबसे सामान्य पथ पकड़ने के लिए:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>Multivariate predictions</h2>
+          <p>यदि कोई profile कई series names पढ़ता है, तो प्रत्येक forecast row में प्रत्येक name के लिए एक field होता है — series का संयुक्त रूप से prediction किया जाता है, इसलिए उनके मान एक row के भीतर सुसंगत रहते हैं। <code>kw</code> और <code>price</code> को एक साथ पढ़ने वाला profile इस तरह की rows लौटाता है:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>Public data profiles</h2>
+          <p>आप Temporis द्वारा बनाए गए साझा profiles के विरुद्ध prediction कर सकते हैं, बिना अपनी ओर से किसी setup के — बस public name को <code>data_profile</code> के रूप में पास करें:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>response की संरचना समान होती है; प्रत्येक row में series fields उसी से मेल खाते हैं जो public profile पढ़ता है।</p>
+
+          <h2>संबंधित</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">prediction samples के साथ काम करना →</p><p class="doc-card-desc">trajectories के एक समूह को intervals, medians, और निर्णयों में बदलें।</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict reference →</p><p class="doc-card-desc">पूरा request और response schema, हर status code के साथ।</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Data profiles →</p><p class="doc-card-desc">वह recipe configure करें जो तय करता है कि प्रत्येक prediction क्या पढ़ता है।</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">इस पृष्ठ पर</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>예측의 작동 방식 — Temporis 문서</title>
+  <meta name="description" content="Temporis는 여러분의 시계열을 하나의 시퀀스로 읽고 이어가는 방식으로 예측합니다. 언어 모델이 텍스트를 이어가는 것과 같습니다. 여기서 그 사고 모델을 만들어 보세요.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/how-it-works" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">문서</a><span class="sep">/</span><span>개념</span><span class="sep">/</span><span>예측의 작동 방식</span></nav>
+          <h1>예측의 작동 방식</h1>
+          <p class="docs-lead">Temporis는 여러분의 시계열을 대형 모델이 읽고 이어가는 하나의 시퀀스로 취급해 예측합니다 — 언어 모델이 텍스트를 이어가는 것과 같습니다. 이 페이지는 API를 만지기 전에 그 사고 모델을 만들어 줍니다.</p>
+
+          <h2>예측은 시퀀스 예측이다</h2>
+          <p>언어 모델은 일정 길이의 텍스트를 읽고 다음에 무엇이 올지 예측합니다. Temporis는 숫자로 똑같은 일을 합니다. 시계열의 최근 이력을 읽고 한 번에 한 단계씩 그것을 이어갑니다.</p>
+          <p>이 모델은 이미 엄청나게 다양한 시계열을 봐 왔습니다 — 주말에 급증하는 수요, 표류하는 가격, 매일 주기를 그리는 에너지 부하 등. 그 모든 것으로부터 무엇이 앞에 왔을 때 무엇이 뒤따르는 경향이 있는지를 학습했습니다. 그래서 예측은 하나의 일반적인 질문이 됩니다: 이 이력이 주어졌을 때, 그럴듯한 이어짐은 무엇인가?</p>
+          <p>이는 고전적인 예측과는 다른 작업 방식입니다. 보통은 모델 계열을 고른 다음, 한 번에 하나의 시계열씩 그 파라미터를 적합시킵니다 — 추세와 계절 항을 고르고, 튜닝하고, 데이터가 변할 때마다 다시 적합시키죠. Temporis는 시계열별 모델 구축을 건너뜁니다. 여러분이 이력을 건네면, 여러 시계열에 걸쳐 학습한 패턴을 활용해 시퀀스를 직접 이어갑니다.</p>
+
+          <h2>숫자에서 토큰으로</h2>
+          <p>모델이 여러분의 시계열을 읽기 전에, 원시 값은 이산적인 토큰의 시퀀스로 변환됩니다 — 그리고 모델의 출력은 다시 숫자로 변환됩니다. 파이프라인은 여러 단계로 진행됩니다:</p>
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">리샘플</div><div class="kv-val">시계열을 정제하고 일정한 시간 격자에 맞춰, 점들 사이의 간격이 균일해지도록 합니다.</div></div>
+            <div class="kv-row"><div class="kv-key">정규화</div><div class="kv-val">데이터의 일반적인 분포 폭(대략 1번째에서 99번째 백분위수 구간)에서 학습한 공통 범위로 값을 재조정해, 서로 다른 시계열이 모델에게 비교 가능해 보이도록 합니다.</div></div>
+            <div class="kv-row"><div class="kv-key">패치 &amp; 압축</div><div class="kv-val">격자를 패치 단위로 잘라내고, 주파수 변환으로 각 패치를 압축합니다. 패치는 모델이 한 번에 읽고 쓰는 단위입니다.</div></div>
+            <div class="kv-row"><div class="kv-key">양자화</div><div class="kv-val">압축된 패치를 이산 토큰의 어휘로 매핑합니다 — 모델이 실제로 보는 알파벳입니다.</div></div>
+            <div class="kv-row"><div class="kv-key">이어가기</div><div class="kv-val">모델이 토큰 시퀀스를 읽고, 언어 모델이 텍스트를 이어가듯 이어짐을 생성합니다.</div></div>
+            <div class="kv-row"><div class="kv-key">디코드</div><div class="kv-val">생성된 토큰을 다시 숫자로 변환하고 정규화를 되돌려, 예측이 여러분 데이터의 실제 스케일에 놓이도록 합니다.</div></div>
+          </div>
+          <p>여기서 핵심 아이디어는 패치입니다: 패치는 모델이 읽고 쓰는 단위를 정합니다. 모델은 원시 관측값을 하나씩 옮기지 않습니다 — 한 번에 패치 하나씩 옮기는데, 그래서 예측이 단일 점이 아니라 단계 단위로 전진합니다.</p>
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">이 인코딩은 여러분이 제어합니다</div><p><a href="../concepts/data-profiles.html">데이터 프로파일</a>의 설정들 — <code>interval</code>, <code>patch_len</code>, <code>patch_spacing</code> — 이 위의 패치로 원시 데이터가 어떻게 리샘플링되고 잘리는지를 결정합니다. 프로파일을 튜닝하는 것이 곧 여러분의 시계열에 맞게 인코딩을 조정하는 방법입니다.</p></div>
+          </div>
+
+          <h2>왜 단일 숫자가 아니라 분포인가</h2>
+          <p>생성은 곧 샘플링입니다. 모델이 시퀀스를 이어갈 때마다 하나의 고정된 답에 매이지 않고 토큰을 추출하므로, 같은 이력에 대한 두 번의 실행이 서로 다른 두 미래를 만들어 낼 수 있습니다. 이는 잡음이 아니라 기능입니다.</p>
+          <p>하나의 예측 요청은 여러 이어짐을 한꺼번에 요청합니다. <code>count</code> 파라미터는 몇 개의 독립적인 궤적을 추출할지 정하며, 각각은 미래로 향하는 완전하고 자기 일관적인 경로입니다. 이들이 함께 확률적 예측을 이룹니다: 하나의 선이 아니라 그럴듯한 결과들의 구름이죠.</p>
+          <p>두 개의 제어가 이 추출이 어떻게 샘플링되는지를 결정합니다. <code>temperature</code>는 각 단계가 얼마나 모험적일지를 정합니다 — 높을수록 샘플이 더 퍼지고, 낮을수록 모델의 가장 가능성 높은 경로 근처에 모여 있습니다. <code>top_p</code>는 샘플링 전에 가능성 낮은 꼬리를 잘라냅니다. 반환된 모든 궤적은 또한 <code>loss</code>를 가지는데, 이는 모델이 그 궤적을 얼마나 전형적이라고 보았는지 순위를 매겨 주므로, 대표 경로를 고르거나 집합에 가중치를 줄 수 있습니다.</p>
+          <p>실제 세계에서의 가치는 그 퍼짐에 있습니다. 거의 확실히 조금은 틀릴 하나의 추측 대신, 모델이 그럴듯하다고 보는 미래의 범위를 볼 수 있습니다 — 최선의 경우, 최악의 경우, 그리고 불확실성이 실제로 얼마나 넓은지를 읽기에 충분할 만큼요.</p>
+          <p>응답을 읽는 법은 <a href="../concepts/predictions.html">예측 &amp; 샘플링</a>을, 궤적 집합을 구간으로 바꾸는 법은 <a href="../guides/prediction-samples.html">예측 샘플 다루기</a>를 참고하세요.</p>
+
+          <h2>데이터 프로파일이 자리하는 곳</h2>
+          <p>데이터 프로파일은 여러분의 원시 데이터를 위의 인코딩과 묶어 주는 저장된 레시피입니다. 데이터 소스를 가리키고, 읽을 시계열의 이름을 지정하며, 리샘플링과 패칭을 좌우하는 손잡이들을 고정합니다 — 그래서 그 프로파일을 대상으로 하는 모든 예측이 여러분의 데이터를 동일한 방식으로 읽게 됩니다.</p>
+          <p>핵심 손잡이는 <code>interval</code>(초 단위 리샘플링 버킷), <code>patch_len</code>과 <code>patch_spacing</code>(각 패치의 크기와 보폭), <code>num_patches</code>(컨텍스트로 얼마나 많은 이력을 읽을지), 그리고 곱셈적으로 증가하는 시계열을 위한 <code>use_diffs</code> 같은 변환입니다. 각각을 고르는 지침과 함께 전체 목록은 <a href="../concepts/data-profiles.html">데이터 프로파일</a>에 있습니다.</p>
+
+          <h2>다음 단계</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">데이터 프로파일 →</p><p class="doc-card-desc">원시 데이터를 인코딩과 묶는 레시피 — 그리고 튜닝할 수 있는 모든 손잡이.</p></a>
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">예측 &amp; 샘플링 →</p><p class="doc-card-desc">응답을 읽고 count, temperature, top_p로 형태를 다듬기.</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">빠른 시작 →</p><p class="doc-card-desc">데이터를 수집하고 첫 예측을 처음부터 끝까지 실행하기.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">이 페이지에서</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

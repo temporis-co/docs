@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Прогнозы и сэмплирование — Документация Temporis</title>
+  <meta name="description" content="Запрос на прогноз возвращает несколько возможных вариантов будущего. Узнайте, как читать ответ и как его формируют count, temperature и top_p.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/predictions" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Документация</a><span class="sep">/</span><span>Концепции</span><span class="sep">/</span><span>Прогнозы и сэмплирование</span></nav>
+          <h1>Прогнозы и сэмплирование</h1>
+          <p class="docs-lead">Запрос на прогноз возвращает несколько возможных вариантов будущего, а не один. На этой странице объясняется, как читать ответ и как его формируют средства управления сэмплированием. Точную схему см. в <a href="../api/predict.html">справочнике по прогнозированию</a>.</p>
+
+          <h2>Анатомия запроса</h2>
+          <p>Вы строите прогноз по профилю данных, а не по необработанному источнику данных. Профиль уже знает, какие ряды читать и как их кодировать, поэтому в запросе нужно лишь указать, какой профиль и как сэмплировать. Это охватывают четыре поля:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span><span class="param-req">Обязательный</span></div>
+              <p class="param-desc">Имя одного из ваших профилей, например <code>hourly_orders</code>, или публичного профиля.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">count</span><span class="param-type">integer</span><span class="param-req">Обязательный</span></div>
+              <p class="param-desc">Сколько независимых будущих траекторий построить. Не менее 1.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">temperature</span><span class="param-type">number</span><span class="param-req">Обязательный</span></div>
+              <p class="param-desc">Насколько разбросаны сэмплы. Должно быть больше 0; около 1.0 — нейтрально.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">top_p</span><span class="param-type">number</span><span class="param-req">Обязательный</span></div>
+              <p class="param-desc">Порог nucleus-сэмплирования в диапазоне от 0 до 1. Меньшее значение обрезает маловероятный хвост.</p>
+            </div>
+          </div>
+          <p>Вот запрос на 20 траекторий по профилю <code>hourly_orders</code>:</p>
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer ts_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_profile": "hourly_orders",
+    "count": 20,
+    "temperature": 1.0,
+    "top_p": 0.9
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": "Bearer ts_your_token"},
+    json={
+        "data_profile": "hourly_orders",
+        "count": 20,
+        "temperature": 1.0,
+        "top_p": 0.9,
+    },
+)
+resp.raise_for_status()
+result = resp.json()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_your_token",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_profile: "hourly_orders",
+    count: 20,
+    temperature: 1.0,
+    top_p: 0.9,
+  }),
+});
+const result = await resp.json();</code></pre></div>
+          </div>
+          <p>Полный справочник — каждое поле, код состояния и сообщение об ошибке — находится в <a href="../api/predict.html">справочнике по эндпоинту прогнозирования</a>.</p>
+
+          <h2>Чтение ответа</h2>
+          <p>Успешный вызов возвращает HTTP 200 с четырьмя полями верхнего уровня:</p>
+          <div class="params">
+            <div class="param">
+              <div class="param-head"><span class="param-name">request_id</span><span class="param-type">string</span></div>
+              <p class="param-desc">Шестнадцатеричный идентификатор этого запроса. Сохраните его для поддержки и собственных логов.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">data_profile</span><span class="param-type">string</span></div>
+              <p class="param-desc">Возвращает профиль, который вы запросили.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predict_from</span><span class="param-type">integer</span></div>
+              <p class="param-desc">Время в Unix-секундах последней <em>наблюдённой</em> метки времени, от которой продолжается прогноз. Каждая траектория начинается сразу после этой точки.</p>
+            </div>
+            <div class="param">
+              <div class="param-head"><span class="param-name">predictions</span><span class="param-type">array</span></div>
+              <p class="param-desc">По одной записи на каждую построенную траекторию (длина равна <code>count</code>). Каждая содержит <code>loss</code> и массив <code>data</code> строк прогноза.</p>
+            </div>
+          </div>
+          <p>В примере ниже показаны две из траекторий прогноза <code>orders</code>. У профиля <code>interval</code> равен 3600, а <code>patch_spacing</code> равен 2, поэтому строки идут с шагом <code>interval &times; patch_spacing</code> = 7200 секунд (два часа):</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "request_id": "9f3c1a7e2b4d",
+  "data_profile": "hourly_orders",
+  "predict_from": 1718888400,
+  "predictions": [
+    {
+      "loss": 0.84,
+      "data": [
+        { "timestamp": 1718895600, "orders": 142.0 },
+        { "timestamp": 1718902800, "orders": 137.5 }
+      ]
+    },
+    {
+      "loss": 1.07,
+      "data": [
+        { "timestamp": 1718895600, "orders": 151.2 },
+        { "timestamp": 1718902800, "orders": 129.8 }
+      ]
+    }
+  ]
+}</code></pre></div>
+          <p>Каждая строка содержит <code>timestamp</code> плюс по одному полю на каждый ряд, который читает профиль, — здесь только <code>orders</code>. Метки времени идут с шагом <code>interval &times; patch_spacing</code> секунд, с одинаковым шагом для каждой траектории, так что вы можете выравнивать сэмплы строка за строкой.</p>
+
+          <h2>Средства управления сэмплированием</h2>
+          <p>Три параметра формируют набор вариантов будущего, который вы получаете. Они уравновешивают разрешение и разнообразие с одной стороны и стоимость и стабильность с другой.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Параметр</th><th>Что делает</th><th>Типичное значение</th><th>Когда повышать / понижать</th></tr></thead>
+            <tbody>
+              <tr><td><code>count</code></td><td>Число построенных независимых траекторий. Больше сэмплов лучше разрешают распределение.</td><td>от 20 до 100</td><td>Повышайте для более гладких интервалов; понижайте, чтобы сократить стоимость в токенах.</td></tr>
+              <tr><td><code>temperature</code></td><td>Насколько разбросаны сэмплы. Выше — разнообразнее и неопределённее; ниже — группируются вблизи наиболее вероятного пути.</td><td>~1.0</td><td>Повышайте, когда прогнозы выглядят слишком узкими; понижайте, когда они нереалистично разбросаны.</td></tr>
+              <tr><td><code>top_p</code></td><td>Порог nucleus. Обрезает маловероятный хвост перед сэмплированием.</td><td>от 0.9 до 1.0</td><td>Понижайте, чтобы подавить неожиданные скачки; повышайте к 1.0, чтобы сохранить всё распределение.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Стоимость растёт вместе с count</div><p>Каждый сэмпл генерируется независимо и тарифицируется по токенам использования модели, поэтому запрос с <code>count</code> 100 стоит примерно в пять раз дороже запроса с <code>count</code> 20. Выбирайте <code>count</code>, чтобы сбалансировать нужное разрешение и стоимость.</p></div>
+          </div>
+
+          <h2>Loss: ранжирование траекторий</h2>
+          <p>Каждый прогноз содержит <code>loss</code>. Меньшее значение означает, что модель сочла эту траекторию более типичной — больше соответствующей тому, что она ожидала с учётом истории. Пути с более высоким loss по-прежнему являются допустимыми сэмплами; они просто менее центральны.</p>
+          <p>Используйте <code>loss</code>, чтобы выбрать одну репрезентативную траекторию, или как вес при обобщении набора. Чтобы взять самый типичный путь:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>best = min(result["predictions"], key=lambda p: p["loss"])</code></pre></div>
+
+          <h2>Многомерные прогнозы</h2>
+          <p>Если профиль читает несколько имён рядов, каждая строка прогноза содержит по одному полю на каждое имя — ряды прогнозируются совместно, так что их значения остаются согласованными внутри строки. Профиль, читающий <code>kw</code> и <code>price</code> вместе, возвращает строки вида:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "timestamp": 1718895600, "kw": 482.0, "price": 31.7 }</code></pre></div>
+
+          <h2>Публичные профили данных</h2>
+          <p>Вы можете строить прогноз по общим профилям, которые поддерживает Temporis, без какой-либо собственной настройки — просто передайте публичное имя в <code>data_profile</code>:</p>
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "data_profile": "temporis/polymarket", "count": 20, "temperature": 1.0, "top_p": 0.9 }</code></pre></div>
+          <p>Форма ответа идентична; поля рядов в каждой строке соответствуют тому, что читает публичный профиль.</p>
+
+          <h2>См. также</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../guides/prediction-samples.html"><p class="doc-card-title">Работа с сэмплами прогнозов →</p><p class="doc-card-desc">Превратите набор траекторий в интервалы, медианы и решения.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Справочник по прогнозированию →</p><p class="doc-card-desc">Полная схема запроса и ответа со всеми кодами состояния.</p></a>
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">Профили данных →</p><p class="doc-card-desc">Настройте рецепт, который определяет, что читает каждый прогноз.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">На этой странице</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

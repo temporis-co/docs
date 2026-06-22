@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مصادر البيانات — توثيق Temporis</title>
+  <meta name="description" content="مصدر البيانات هو المكان الذي تعيش فيه أرصادك الخام. تعرّف على نموذج بيانات Temporis وكيفية بثّ البيانات إليه.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="concepts/data-sources" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">التوثيق</a><span class="sep">/</span><span>المفاهيم</span><span class="sep">/</span><span>مصادر البيانات</span></nav>
+          <h1>مصادر البيانات</h1>
+          <p class="docs-lead">مصدر البيانات هو المكان الذي تعيش فيه أرصادك الخام. تغطي هذه الصفحة نموذج بيانات Temporis وكيفية إرسال البيانات إليه على نحو جيّد.</p>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>تنشئ مصدر بيانات مرة واحدة في لوحة التحكم، ثم تبثّ الأرصاد إليه عبر الواجهة البرمجية مع حدوثها.</p></div>
+          </div>
+
+          <h2>نموذج البيانات</h2>
+          <p>يخزّن Temporis البيانات في صورة صفوف. وكل رصد ثلاثية واحدة: <em>متى</em> قِيس شيء ما، و<em>ما</em> الذي قِيس، و<em>الرقم</em> الذي قِسته.</p>
+
+          <div class="kv">
+            <div class="kv-row"><div class="kv-key">timestamp</div><div class="kv-val">وقت يونكس بالـ<strong>ثواني</strong> (عدد صحيح). اللحظة التي أُخذ فيها الرصد.</div></div>
+            <div class="kv-row"><div class="kv-key">name</div><div class="kv-val">السلسلة التي تنتمي إليها هذه القيمة — مثل <code>orders</code> أو <code>revenue</code>.</div></div>
+            <div class="kv-row"><div class="kv-key">value</div><div class="kv-val">رقم. والأعداد العشرية مقبولة.</div></div>
+          </div>
+
+          <p>يستطيع مصدر بيانات واحد أن يحتفظ بسلاسل مسمّاة كثيرة جنباً إلى جنب. والحقل <code>name</code> هو ما يميّزها. وبياناتك معزولة عن بيانات كل عميل آخر — فمصدر البيانات يخصّك وحدك.</p>
+
+          <h2>إنشاء مصدر بيانات</h2>
+          <p>تنشئ مصدر بيانات في لوحة التحكم تحت <strong>مصادر البيانات</strong>. امنحه اسماً ويصبح جاهزاً لاستقبال البيانات.</p>
+
+          <p>تتبع الأسماء بضع قواعد:</p>
+          <ul>
+            <li>تبدأ بحرف صغير.</li>
+            <li>استخدم الحروف الصغيرة والأرقام والشرطات السفلية فقط.</li>
+            <li>حتى 48 محرفاً.</li>
+          </ul>
+
+          <p>فـ<code>store_metrics</code> و<code>grid_load_eu</code> صالحان؛ أما <code>Store-Metrics</code> و<code>2024data</code> فليسا كذلك. ويبقى مصدر البيانات المُنشأ حديثاً فارغاً حتى ترسل إليه أرصاداً.</p>
+
+          <h2>إرسال الأرصاد</h2>
+          <p>تضيف البيانات بنقطة نهاية الاستيعاب. ويحمل كل نداء مصدر البيانات الهدف <code>data_source</code> وقائمة من <code>records</code>. هنا ندفع بضع قراءات <code>orders</code> إلى <code>store_metrics</code>.</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl -X POST https://api.temporis.co/v1/data_sources/ingest \
+  -H "Authorization: Bearer ts_&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_source": "store_metrics",
+    "records": [
+      { "timestamp": 1718870400, "name": "orders", "value": 42 },
+      { "timestamp": 1718874000, "name": "orders", "value": 51 },
+      { "timestamp": 1718877600, "name": "orders", "value": 47 }
+    ]
+  }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import requests
+
+requests.post(
+    "https://api.temporis.co/v1/data_sources/ingest",
+    headers={"Authorization": "Bearer ts_&lt;token&gt;"},
+    json={
+        "data_source": "store_metrics",
+        "records": [
+            {"timestamp": 1718870400, "name": "orders", "value": 42},
+            {"timestamp": 1718874000, "name": "orders", "value": 51},
+            {"timestamp": 1718877600, "name": "orders", "value": 47},
+        ],
+    },
+)  # -&gt; 204 No Content</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>await fetch("https://api.temporis.co/v1/data_sources/ingest", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ts_&lt;token&gt;",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    data_source: "store_metrics",
+    records: [
+      { timestamp: 1718870400, name: "orders", value: 42 },
+      { timestamp: 1718874000, name: "orders", value: 51 },
+      { timestamp: 1718877600, name: "orders", value: 47 },
+    ],
+  }),
+}); // -&gt; 204 No Content</code></pre></div>
+          </div>
+
+          <p>يُعيد الاستيعاب الناجح <strong>HTTP 204 No Content</strong> بجسم فارغ — فليس هناك ما يُقرأ مجدداً، إذ تُخزَّن الصفوف ببساطة. راجع <a href="../api/ingest.html">مرجع الاستيعاب</a> للاطلاع على تفاصيل الطلب والأخطاء كاملةً.</p>
+
+          <h2>سلاسل كثيرة في مصدر واحد</h2>
+          <p>لست مقيّداً بسلسلة واحدة لكل مصدر. أرسل قيم <code>name</code> مختلفة إلى <code>data_source</code> نفسه وستتعايش كسلاسل منفصلة. فقد يتتبّع متجر الطلبات والإيرادات والزائرين جميعاً في <code>store_metrics</code>.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{
+  "data_source": "store_metrics",
+  "records": [
+    { "timestamp": 1718870400, "name": "orders",  "value": 42 },
+    { "timestamp": 1718870400, "name": "revenue", "value": 1284.50 }
+  ]
+}</code></pre></div>
+
+          <p>إبقاء السلاسل المترابطة معاً مريح ويتيح لك التنبؤ بها مجتمعةً لاحقاً. و<a href="data-profiles.html">ملف البيانات</a> هو المكان الذي تختار فيه أيّاً من هذه الأسماء ستقرؤه فعلاً.</p>
+
+          <h2>التحديثات والتعبئة الرجعية</h2>
+          <p>مفتاح الإدراج-أو-التحديث هو الزوج <code>(timestamp, name)</code>. وإرسال سجل بطابع زمني واسم موجودين سلفاً <strong>يستبدل</strong> القيمة المخزّنة بدلاً من إضافة نسخة مكرّرة.</p>
+
+          <div class="callout tip">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a4.5 4.5 0 0 0-2.5 8.24V11h5V9.74A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5h3M7 15h2"/></svg>
+            <div class="callout-body"><div class="callout-title">التعبئة الرجعية وإعادة المحاولة آمنتان</div><p>لأن عمليات الكتابة عديمة الأثر التراكمي على <code>(timestamp, name)</code>، يمكنك إعادة تشغيل دفعة بعد تعثّر في الشبكة، أو تصحيح قراءة خاطئة، أو تحميل أشهر من التاريخ بأي ترتيب — والنتيجة دائماً القيمة النهائية نفسها لكل سلّة.</p></div>
+          </div>
+
+          <h2>الأرشفة</h2>
+          <p>عندما يتوقف مصدر عن جمع بيانات جديدة، يمكنك أرشفته في لوحة التحكم. توقف الأرشفة الاستيعاب اللاحق: فطلب يستهدف مصدراً مؤرشفاً يُعيد <strong>HTTP 409</strong> <code>"Data source is archived."</code></p>
+
+          <p>الأرشفة غير مُتلِفة. فالبيانات الموجودة تبقى في مكانها، وأي ملفات بيانات بُنيت على المصدر تستمر في العمل مقابل البيانات المخزّنة سلفاً.</p>
+
+          <h2>الخطوات التالية</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/data-profiles.html"><p class="doc-card-title">ملفات البيانات →</p><p class="doc-card-desc">حوّل السلاسل الخام لمصدرٍ إلى شيء يمكنك التنبؤ به.</p></a>
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">واجهة الاستيعاب البرمجية →</p><p class="doc-card-desc">المرجع الكامل لنقطة نهاية الاستيعاب واستجاباتها.</p></a>
+            <a class="doc-card" href="../guides/preparing-data.html"><p class="doc-card-title">تحضير البيانات →</p><p class="doc-card-desc">نصائح عملية لإدخال سلاسل نظيفة وجاهزة للتنبؤ.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">في هذه الصفحة</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

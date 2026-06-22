@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mit Prognose-Samples arbeiten — Temporis Docs</title>
+  <meta name="description" content="Aus den vielen gesampelten Trajektorien von /v1/predict eine Punktprognose und ein Konfidenzband machen.">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="guides/prediction-samples" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">Docs</a><span class="sep">/</span><span>Anleitungen</span><span class="sep">/</span><span>Mit Samples arbeiten</span></nav>
+          <h1>Mit Prognose-Samples arbeiten</h1>
+          <p class="docs-lead"><code>/v1/predict</code> gibt viele gesampelte Trajektorien zurück. Diese Anleitung verwandelt sie in das, was Sie tatsächlich brauchen: eine Punktprognose und ein Konfidenzband.</p>
+
+          <h2>Warum viele Trajektorien</h2>
+          <p>Temporis erzeugt Prognosen durch Sampling — es liest Ihre Historie und zeichnet eine plausible Fortsetzung, so wie ein Sprachmodell Text fortsetzt. Jede Ziehung ist <strong>eine mögliche Zukunft</strong>, nicht die Zukunft. Fordern Sie <code>count</code> Ziehungen an, erhalten Sie <code>count</code> unabhängige Trajektorien in <code>predictions</code>.</p>
+          <p>Der Sinn vieler Ziehungen ist die <strong>Streuung</strong>. Wo die Trajektorien übereinstimmen, ist das Modell zuversichtlich; wo sie auseinanderlaufen, ist die Zukunft tatsächlich ungewiss. Diese Streuung ist Ihre Unsicherheitsschätzung — weshalb ein einzelnes Sample selten das ist, was Sie wollen.</p>
+          <p>Setzen Sie <code>count</code> hoch genug, um diese Streuung aufzulösen. Eine Handvoll Ziehungen gibt ein zappeliges, unzuverlässiges Bild; irgendwo im Bereich von <strong>20 bis 100</strong> löst die Verteilung für die meisten Reihen gut auf. Mehr ist glatter, aber nicht kostenlos.</p>
+
+          <div class="callout warning">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2 1.5 13.5h13L8 2z"/><path d="M8 6.5v3.2M8 11.3v.05"/></svg>
+            <div class="callout-body"><div class="callout-title">Count kostet Tokens</div><p>Prognosen werden pro Modell-Token abgerechnet, und jede Trajektorie erzeugt einen vollen Horizont an Tokens. Eine Verdopplung von <code>count</code> verdoppelt ungefähr die Kosten des Aufrufs. Verwenden Sie genug Samples, um die Streuung klar zu sehen, und hören Sie dann auf.</p></div>
+          </div>
+
+          <h2>Eine Punktprognose</h2>
+          <p>Um die Samples in eine Zahl pro zukünftigem Zeitstempel zusammenzufassen, <strong>aggregieren Sie über die Trajektorien hinweg bei jedem Zeitschritt</strong>. Der <strong>Median</strong> ist ein guter Standard — er ist robust gegenüber der gelegentlichen Ausreißer-Trajektorie; der Mittelwert funktioniert ebenfalls, wenn Sie ihn bevorzugen.</p>
+          <p>Die <code>data</code>-Zeilen jeder Prognose teilen dieselben Zeitstempel in derselben Reihenfolge, sodass Sie sie nach Index ausrichten können. Hier fordern wir 50 Samples vom Profil <code>hourly_orders</code> an und berechnen eine mediane <code>orders</code>-Prognose pro Zeitstempel:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+from statistics import median
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+# Each prediction's rows are in the same timestamp order, so transpose by index.
+preds = body["predictions"]            # length == count (50)
+rows = list(zip(*[p["data"] for p in preds]))  # group row i across all samples
+
+point_forecast = []
+for step in rows:
+    ts = step[0]["timestamp"]          # shared timestamp for this step
+    values = [row["orders"] for row in step]
+    point_forecast.append({"timestamp": ts, "orders": median(values)})
+
+for f in point_forecast[:3]:
+    print(f["timestamp"], round(f["orders"], 1))</code></pre></div>
+
+          <h2>Konfidenzbänder</h2>
+          <p>Der Median gibt Ihnen eine Mittellinie; ein Band gibt Ihnen die Spanne darum herum. Berechnen Sie <strong>Quantile pro Zeitstempel</strong> über die Samples hinweg — das 10., 50. und 90. Perzentil sind eine gängige Wahl. Das Ergebnis sind drei Linien: eine untere Kante (p10), die Mitte (p50) und eine obere Kante (p90).</p>
+          <p>Lesen Sie das Band als "etwa 80 % der gesampelten Zukünfte fallen zu diesem Zeitstempel zwischen p10 und p90". Ein schmales Band bedeutet, das Modell ist zuversichtlich; ein Band, das sich weitet, je weiter Sie nach vorne blicken, ist das Modell, das Ihnen ehrlich sagt, dass die ferne Zukunft weniger sicher ist als die nahe.</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>import os, requests
+import numpy as np
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 50, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()
+body = resp.json()
+
+preds = body["predictions"]
+timestamps = [row["timestamp"] for row in preds[0]["data"]]
+
+# Shape: (count, horizon) — one row per sample, one column per timestep.
+matrix = np.array([[row["orders"] for row in p["data"]] for p in preds])
+
+p10, p50, p90 = np.percentile(matrix, [10, 50, 90], axis=0)
+
+band = [
+    {"timestamp": ts, "p10": lo, "p50": mid, "p90": hi}
+    for ts, lo, mid, hi in zip(timestamps, p10, p50, p90)
+]
+for b in band[:3]:
+    print(b["timestamp"], round(b["p10"], 1), round(b["p50"], 1), round(b["p90"], 1))</code></pre></div>
+
+          <h2>count, temperature, top_p in der Praxis wählen</h2>
+          <p>Drei Stellschrauben formen die Samples, und sie erfüllen unterschiedliche Aufgaben:</p>
+          <ul>
+            <li><code>count</code> steuert die <strong>Auflösung</strong> — wie fein die Streuung gesampelt wird. Es ändert nicht die Form der Verteilung, nur wie klar Sie sie sehen.</li>
+            <li><code>temperature</code> (größer als 0) steuert die <strong>Streuung</strong> — höhere Werte ziehen vielfältigere, weiter gestreute Zukünfte; niedrigere Werte gruppieren die Samples nahe am wahrscheinlichsten Pfad des Modells. Etwa <code>1.0</code> ist neutral.</li>
+            <li><code>top_p</code> (0 bis 1) <strong>beschneidet die Ränder</strong> — eine Senkung schneidet die unwahrscheinlichen Extreme ab, sodass Sie weniger überraschende Sprünge erhalten; <code>1.0</code> behält die volle Verteilung.</li>
+          </ul>
+          <p>Sinnvolle Ausgangspunkte, abhängig davon, wie sprunghaft Ihre Reihe ist:</p>
+
+          <div class="table-wrap"><table><thead><tr><th>Charakter der Reihe</th><th>count</th><th>temperature</th><th>top_p</th></tr></thead><tbody>
+            <tr><td>Stabil, glatt (gleichmäßige Nachfrage)</td><td>20–30</td><td>0.8</td><td>0.9</td></tr>
+            <tr><td>Typisch</td><td>50</td><td>1.0</td><td>0.9</td></tr>
+            <tr><td>Volatil, sprunghaft (Preise, stoßartiger Traffic)</td><td>80–100</td><td>1.1</td><td>0.95</td></tr>
+          </tbody></table></div>
+
+          <p>Behandeln Sie diese als Ausgangspunkt. Zeichnen Sie ein Band, schauen Sie, ob es zu eng ist, um ehrlich zu sein, oder so weit, dass es nutzlos ist, und passen Sie zuerst <code>temperature</code> an.</p>
+
+          <h2>Nach Loss sortieren</h2>
+          <p>Manchmal möchten Sie einen einzelnen repräsentativen Pfad statt eines Bandes — für eine Demo, einen Plausibilitätscheck oder ein schnelles "wie sieht eine typische Zukunft aus". Jede Trajektorie trägt einen <code>loss</code>, und <strong>ein niedrigerer Loss bedeutet, dass das Modell diesen Pfad für typischer hielt</strong>. Sortieren Sie danach und nehmen Sie den Anfang der Liste:</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code># body is the parsed /v1/predict response
+ranked = sorted(body["predictions"], key=lambda p: p["loss"])
+
+most_typical = ranked[0]               # lowest loss = most representative path
+for row in most_typical["data"][:3]:
+    print(row["timestamp"], row["orders"])
+
+# Or trim outliers: keep the most-typical 80% before computing a band.
+keep = ranked[: int(len(ranked) * 0.8)]</code></pre></div>
+
+          <div class="callout note">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4M8 5.1v.05"/></svg>
+            <div class="callout-body"><p>Für eine tatsächliche Prognose bevorzugen Sie den Median und ein Band gegenüber jeder einzelnen Trajektorie — der Pfad mit dem niedrigsten Loss ist eine plausible Zukunft, nicht ein Durchschnitt davon. Das Sortieren ist am nützlichsten, um ein sauberes Beispiel auszuwählen oder Ausreißer herauszufiltern.</p></div>
+          </div>
+
+          <h2>Verwandt</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../concepts/predictions.html"><p class="doc-card-title">Prognosen →</p><p class="doc-card-desc">Wie Sampling Historie in eine probabilistische Prognose verwandelt.</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">Predict-API →</p><p class="doc-card-desc">Die vollständige Anfrage- und Antwortreferenz.</p></a>
+            <a class="doc-card" href="../guides/tuning-profile.html"><p class="doc-card-title">Ein Datenprofil abstimmen →</p><p class="doc-card-desc">Die zugrunde liegende Prognose richtig hinbekommen, bevor Sie sie sampeln.</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">Auf dieser Seite</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>

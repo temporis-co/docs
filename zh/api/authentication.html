@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>身份验证 — Temporis 文档</title>
+  <meta name="description" content="创建、发送并保护用于验证每个 Temporis API 请求的 bearer 令牌。">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/docs.css">
+  <script>
+    (function () {
+      var k = 'temporis-theme', m = window.matchMedia('(prefers-color-scheme: dark)'), t = m.matches ? 'dark' : 'light';
+      try { var s = localStorage.getItem(k); if (s === 'light' || s === 'dark') t = s; } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body data-page="api/authentication" data-base="../">
+  <div class="docs-shell">
+    <div class="docs-page">
+      <div class="docs-main">
+        <article class="docs-article">
+          <nav class="docs-breadcrumb"><a href="../index.html">文档</a><span class="sep">/</span><span>API 参考</span><span class="sep">/</span><span>身份验证</span></nav>
+          <h1>身份验证</h1>
+          <p class="docs-lead">每个 Temporis API 请求都使用 bearer 令牌进行身份验证。下面介绍如何创建、发送并妥善保管它。</p>
+
+          <h2>访问令牌</h2>
+          <p>你可以在仪表板的 <a href="https://platform.temporis.co">Access Tokens</a> 中创建访问令牌。令牌是一串以 <code>ts_</code> 为前缀的长随机字符串。</p>
+          <p>完整的令牌仅在创建时<strong>显示一次</strong>。Temporis 在服务端只存储它的哈希值，而绝不存储令牌本身。这意味着丢失的令牌无法找回——如果你弄丢了它，请将其删除并创建一个新的。</p>
+
+          <div class="callout danger">
+            <svg class="callout-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>
+            <div class="callout-body"><div class="callout-title">像对待密码一样对待令牌</div><p>任何持有你令牌的人都可以摄取数据并运行预测——而预测会按你的账户计费。请相应地妥善保管它们。</p></div>
+          </div>
+
+          <h2>验证请求</h2>
+          <p>在每个请求中通过 <code>Authorization</code> 头发送令牌，使用 <code>Bearer</code> 方案：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>Authorization: Bearer ts_your_token_here</code></pre></div>
+
+          <p>本文档中的示例都从 <code>TEMPORIS_TOKEN</code> 环境变量读取令牌，这样密钥就不会出现在源码中。在你的 shell 中导出一次即可：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>export TEMPORIS_TOKEN="ts_your_token_here"</code></pre></div>
+
+          <p>然后将其作为请求头附加上去：</p>
+
+          <div class="code-group">
+            <div class="code-block-wrap" data-lang="cURL"><pre class="code-block"><code>curl https://api.temporis.co/v1/predict \
+  -H "Authorization: Bearer $TEMPORIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9 }'</code></pre></div>
+            <div class="code-block-wrap" data-lang="Python"><pre class="code-block"><code>import os, requests
+
+token = os.environ["TEMPORIS_TOKEN"]
+
+resp = requests.post(
+    "https://api.temporis.co/v1/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"data_profile": "hourly_orders", "count": 5, "temperature": 1.0, "top_p": 0.9},
+)
+resp.raise_for_status()</code></pre></div>
+            <div class="code-block-wrap" data-lang="JavaScript"><pre class="code-block"><code>const token = process.env.TEMPORIS_TOKEN;
+
+const resp = await fetch("https://api.temporis.co/v1/predict", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ data_profile: "hourly_orders", count: 5, temperature: 1.0, top_p: 0.9 }),
+});</code></pre></div>
+          </div>
+
+          <h2>身份验证失败时</h2>
+          <p>如果 <code>Authorization</code> 头缺失或格式错误，或者令牌无法识别，API 会返回 HTTP 401 以及一个描述出错原因的 JSON 主体：</p>
+
+          <div class="code-block-wrap"><pre class="code-block"><code>{ "detail": "Invalid access token." }</code></pre></div>
+
+          <p>缺失或格式错误的请求头则返回 <code>{ "detail": "Missing access token." }</code>。两者都是 401。完整的响应列表请参阅<a href="../api/errors.html">错误与状态码</a>。</p>
+
+          <h2>妥善保管令牌</h2>
+          <p>一些好习惯能让你的令牌远离不法之手：</p>
+          <ul>
+            <li><strong>切勿将令牌提交到版本控制系统</strong>，也切勿将其放入客户端代码中。浏览器和移动应用会将其源码分发给用户。</li>
+            <li><strong>从环境变量或密钥管理器中读取令牌。</strong>让它们远离日志、截图和工单。</li>
+            <li><strong>为每个服务创建单独的令牌</strong>，这样你就可以吊销其中一个而不影响其他。</li>
+            <li><strong>在仪表板中删除令牌即可立即吊销它。</strong>删除会立即生效——下一个使用该令牌的请求将收到 401。</li>
+          </ul>
+
+          <h2>后续步骤</h2>
+          <div class="card-grid">
+            <a class="doc-card" href="../api/ingest.html"><p class="doc-card-title">摄取记录 →</p><p class="doc-card-desc">将观测值发送到数据源中。</p></a>
+            <a class="doc-card" href="../api/predict.html"><p class="doc-card-title">创建预测 →</p><p class="doc-card-desc">从数据画像中抽取采样的未来轨迹。</p></a>
+            <a class="doc-card" href="../quickstart.html"><p class="doc-card-title">快速开始 →</p><p class="doc-card-desc">从令牌到第一次预测。</p></a>
+          </div>
+
+          <div id="docs-pager" class="docs-pager"></div>
+        </article>
+        <aside class="docs-toc" id="docs-toc">
+          <div class="docs-toc-inner">
+            <div class="docs-toc-title">本页内容</div>
+            <nav id="docs-toc-list"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script src="/assets/docs.js"></script>
+</body>
+</html>
